@@ -42,7 +42,7 @@ export class Exporter {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @OneToOne(() => User, (user) => user.exporter)
+  @OneToOne(() => User, (user) => user.exporter, { onDelete: 'CASCADE' })
   @JoinColumn()
   user: User;
 

@@ -6,6 +6,7 @@ import * as bcrypt from 'bcrypt';
 import { User, UserRole } from '../user/entities/user.entity';
 import { GlobalBuyer } from '../global-buyer/entities/global-buyer.entity';
 import { Exporter } from '../exporter/entities/exporter.entity';
+import { CreateUserDto } from '../user/dto/create-user.dto';
 
 @Injectable()
 export class BetterAuthService {
@@ -19,7 +20,8 @@ export class BetterAuthService {
     private jwtService: JwtService,
   ) {}
 
-  async signUp(email: string, password: string, additionalData: any) {
+
+  async signUp(email: string, password: string, userData: CreateUserDto) {
     try {
       // Check if user already exists
       const existingUser = await this.userRepository.findOne({ where: { email } });
@@ -30,43 +32,50 @@ export class BetterAuthService {
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Create user
+      console.log('Signup userData received:', userData);
+
+      // Create user with proper field mapping
       const user = this.userRepository.create({
         email,
         password: hashedPassword,
-        firstName: additionalData.firstName || '',
-        lastName: additionalData.lastName || '',
-        phoneNumber: additionalData.phone,
-        role: additionalData.role || UserRole.GLOBAL_BUYER,
-        companyName: additionalData.businessName,
+        firstName: userData.firstName || '',
+        lastName: userData.lastName || '',
+        phoneNumber: userData.phoneNumber,
+        countryCode: userData.countryCode,
+        countryName: userData.countryName,
+        role: userData.role || UserRole.GLOBAL_BUYER,
+        companyName: userData.companyName,
         isVerified: true, // Auto-verify for now
       });
 
+      console.log('User entity before save:', user);
       const savedUser = await this.userRepository.save(user);
+      console.log('User saved successfully:', savedUser.id);
 
       // Create role-specific entity
       if (savedUser.role === UserRole.GLOBAL_BUYER) {
         const globalBuyer = this.globalBuyerRepository.create({
-          user: savedUser,
           userId: savedUser.id,
-          businessRegistrationNumber: additionalData.registrationNumber,
-          businessDescription: additionalData.businessName,
+          businessRegistrationNumber: undefined, // Not available in CreateUserDto
+          businessDescription: userData.companyName,
         });
-        await this.globalBuyerRepository.save(globalBuyer);
+        const savedGlobalBuyer = await this.globalBuyerRepository.save(globalBuyer);
+        console.log('GlobalBuyer created:', savedGlobalBuyer.id);
       } else if (savedUser.role === UserRole.EXPORTER) {
         const exporter = this.exporterRepository.create({
-          user: savedUser,
           userId: savedUser.id,
-          companyRegistrationNumber: additionalData.registrationNumber,
-          businessDescription: additionalData.businessName,
+          companyRegistrationNumber: undefined, // Not available in CreateUserDto
+          businessDescription: userData.companyName,
         });
-        await this.exporterRepository.save(exporter);
+        const savedExporter = await this.exporterRepository.save(exporter);
+        console.log('Exporter created:', savedExporter.id);
       }
 
       // Remove password from response
       const { password: _, ...userResponse } = savedUser;
       return userResponse;
     } catch (error) {
+      console.error('Signup error:', error);
       throw new BadRequestException(`Signup failed: ${error.message}`);
     }
   }
@@ -102,7 +111,15 @@ export class BetterAuthService {
         globalBuyerId: user.globalBuyer?.id,
         exporterId: user.exporter?.id,
       };
+      
+      console.log('=== SIGNIN DEBUG ===');
+      console.log('Login attempt for email:', email);
+      console.log('User found in DB:', user.email, 'ID:', user.id, 'Role:', user.role);
+      console.log('JWT payload being created:', payload);
+      
       const token = this.jwtService.sign(payload);
+      console.log('JWT token created, length:', token.length);
+      console.log('=== END SIGNIN DEBUG ===');
 
       // Remove password from response
       const { password: _, ...userResponse } = user;
@@ -125,14 +142,11 @@ export class BetterAuthService {
     return { success: true };
   }
 
-  async getUser(sessionToken: string) {
+  async getUser(userId: string) {
     try {
-      // Verify and decode JWT token
-      const payload = this.jwtService.verify(sessionToken);
-      
-      // Find user
+      // Find user by ID
       const user = await this.userRepository.findOne({
-        where: { id: payload.sub },
+        where: { id: userId },
         relations: ['globalBuyer', 'exporter'],
       });
 

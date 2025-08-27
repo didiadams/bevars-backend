@@ -10,6 +10,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { SourcingRequest } from 'src/sourcing-request/entities/sourcing-request.entity';
+import { BuyerVerificationDocument } from './buyer-verification-document.entity';
 
 export enum BuyerType {
   RETAILER = 'retailer',
@@ -35,10 +36,36 @@ export enum PreferredPaymentMethod {
 
 @Entity('global_buyer')
 export class GlobalBuyer {
+  // Verification document URLs (one column per type)
+  @Column({ nullable: true })
+  passportUrl: string;
+
+  @Column({ nullable: true })
+  certificateUrl: string;
+
+    // New column for industry certifications
+    @Column({ nullable: true })
+    industryCertificationsUrl: string;
+
+  @Column({ nullable: true })
+  taxIdUrl: string;
+
+  @Column({ nullable: true })
+  businessLicenseUrl: string;
+
+  @Column({ nullable: true })
+  photoUrl: string;
+
+  // Optional documents
+  @Column({ nullable: true })
+  optionalDoc1Url: string;
+
+  @Column({ nullable: true })
+  optionalDoc2Url: string;
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @OneToOne(() => User, (user) => user.globalBuyer)
+  @OneToOne(() => User, (user) => user.globalBuyer, { onDelete: 'CASCADE' })
   @JoinColumn()
   user: User;
 
@@ -116,6 +143,9 @@ export class GlobalBuyer {
   // Relationships
   @OneToMany(() => SourcingRequest, (request) => request.globalBuyer)
   sourcingRequests: SourcingRequest[];
+
+  @OneToMany(() => BuyerVerificationDocument, (doc) => doc.buyer)
+  verificationDocuments: BuyerVerificationDocument[];
 
   @CreateDateColumn()
   createdAt: Date;

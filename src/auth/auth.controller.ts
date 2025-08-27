@@ -33,7 +33,20 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async getMe(@Request() req) {
+    console.log('=== /auth/me DEBUG ===');
+    console.log('JWT payload user object:', req.user);
+    console.log('User ID from token (req.user.id):', req.user.id);
+    console.log('User email from token:', req.user.email);
+    console.log('User role from token:', req.user.role);
+    
     const user = await this.betterAuthService.getUser(req.user.id);
-    return { user };
+    console.log('Database user found:', user ? `${user.email} (${user.role})` : 'null');
+    console.log('=== END DEBUG ===');
+    
+    return {
+      statusCode: 200,
+      message: "User data retrieved successfully",
+      data: user
+    };
   }
 }

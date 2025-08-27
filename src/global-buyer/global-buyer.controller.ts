@@ -1,13 +1,39 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, UsePipes, ValidationPipe } from '@nestjs/common';
+
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, UsePipes, ValidationPipe, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GlobalBuyerService } from './global-buyer.service';
 import { CreateGlobalBuyerDto, UpdateGlobalBuyerDto, GlobalBuyerProfileDto } from './dto';
 import { GlobalBuyer } from './entities/global-buyer.entity';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 
-@Controller('api/v1/global-buyer')
+@Controller('global-buyer')
 @UseGuards(JwtAuthGuard)
 export class GlobalBuyerController {
+
+  // List uploaded verification documents
+  @Get('verification/documents')
+  async listVerificationDocuments(@Request() req) {
+    return this.globalBuyerService.listVerificationDocuments(req.user.id);
+  }
+
+  // Fetch a single verification document by documentId
+  @Get('verification/documents/:documentId')
+  async getVerificationDocument(
+    @Param('documentId') documentId: string,
+    @Request() req
+  ) {
+    return this.globalBuyerService.getVerificationDocument(req.user.id, documentId);
+  }
+
+  // Delete an uploaded verification document
+  @Delete('verification/documents/:documentId')
+  async deleteVerificationDocument(
+    @Param('documentId') documentId: string,
+    @Request() req
+  ) {
+    return this.globalBuyerService.deleteVerificationDocument(req.user.id, documentId);
+  }
   constructor(private readonly globalBuyerService: GlobalBuyerService) {}
 
   @Post()
@@ -17,6 +43,62 @@ export class GlobalBuyerController {
       ...createDto,
       userId: req.user.id,
     });
+  }
+
+  // Verification overview/status for dashboard
+  @Get('verification/overview')
+  async getVerificationOverview(@Request() req) {
+    return this.globalBuyerService.getVerificationOverview(req.user.id);
+  }
+
+  // Upload verification document (simulate file upload, real implementation would use cloud storage)
+  @Post('verification/documents/:documentId')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadVerificationDocument(
+    @Param('documentId') documentId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req
+  ) {
+    // Edge case: No file uploaded
+    if (!file) {
+      return { success: false, message: 'No file uploaded' };
+    }
+    return this.globalBuyerService.uploadVerificationDocument(
+      req.user.id,
+      documentId,
+      file.originalname,
+      file
+    );
+  }
+
+  // Submit verification for review
+  @Post('verification/submit')
+  async submitVerification(@Request() req) {
+    return this.globalBuyerService.submitVerification(req.user.id);
+  }
+
+  // Get verification messages (for chat/messages tab)
+  @Get('verification/messages')
+  async getVerificationMessages(@Request() req) {
+    return this.globalBuyerService.getVerificationMessages(req.user.id);
+  }
+
+  // Add a message (for reviewer/system/buyer communication)
+  @Post('verification/messages')
+  async addVerificationMessage(
+    @Body() body: { message: string; type?: string },
+    @Request() req
+  ) {
+    // Edge case: Empty message
+    if (!body.message || body.message.trim().length === 0) {
+      return { success: false, message: 'Message cannot be empty' };
+    }
+    return this.globalBuyerService.addVerificationMessage(
+      req.user.id,
+      'buyer',
+      body.message,
+      body.type || 'info'
+    );
   }
 
   @Get('profile')

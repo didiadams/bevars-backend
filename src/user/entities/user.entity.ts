@@ -67,10 +67,10 @@ export class User {
   @Column({ default: false })
   tokenVersion: number;
 
-  @OneToOne(() => GlobalBuyer, { cascade: true, onDelete: 'CASCADE' })
+  @OneToOne(() => GlobalBuyer, (globalBuyer) => globalBuyer.user)
   globalBuyer: GlobalBuyer;
 
-  @OneToOne(() => Exporter, { cascade: true, onDelete: 'CASCADE' })
+  @OneToOne(() => Exporter, (exporter) => exporter.user)
   exporter: Exporter;
 
   @CreateDateColumn()

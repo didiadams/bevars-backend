@@ -59,12 +59,12 @@ app.enableCors({
     new ValidationPipe({
       transform: true,
       whitelist: true,
-          enableDebugMessages: true,
-    forbidNonWhitelisted: true,
-    validationError: {
-      target: false,
-      value: true,
-    },
+      enableDebugMessages: true,
+      forbidNonWhitelisted: false, // Allow extra properties but ignore them
+      validationError: {
+        target: false,
+        value: true,
+      },
     }),
   );
 

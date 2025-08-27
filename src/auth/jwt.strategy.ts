@@ -14,12 +14,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    return {
+    console.log('JWT Strategy validate - payload received:', payload);
+    
+    const user = {
       id: payload.sub,
+      sub: payload.sub, // Add this for backward compatibility
       email: payload.email,
       role: payload.role,
       globalBuyerId: payload.globalBuyerId,
       exporterId: payload.exporterId,
     };
+    
+    console.log('JWT Strategy validate - returning user object:', user);
+    return user;
   }
 }

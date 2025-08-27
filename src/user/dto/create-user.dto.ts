@@ -20,7 +20,10 @@ export class CreateUserDto {
   @Length(6, 20, { message: 'password must be between 6 and 20 characters' })
   password: string;
 
-  @IsEnum(UserRole, { message: 'Role must either be farmer or buyer' })
+  @IsNotEmpty()
+  @IsIn([UserRole.GLOBAL_BUYER, UserRole.EXPORTER, UserRole.ADMIN], {
+    message: 'Role must be either global_buyer, exporter, or admin'
+  })
   role: UserRole;
 
   @IsString()
