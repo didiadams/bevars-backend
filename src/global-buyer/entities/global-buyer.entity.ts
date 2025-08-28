@@ -1,3 +1,9 @@
+
+export enum VerificationTier {
+  STANDARD = 'standard',
+  PREMIUM = 'premium',
+  ENTERPRISE = 'enterprise',
+}
 import { User } from 'src/user/entities/user.entity';
 import {
   Column,
@@ -36,6 +42,26 @@ export enum PreferredPaymentMethod {
 
 @Entity('global_buyer')
 export class GlobalBuyer {
+  // Verification metadata columns for scalable status tracking
+  @Column({ type: 'text', nullable: true })
+  reviewNotes: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  submittedDate: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  approvedDate: Date;
+
+  @Column({ type: 'varchar', nullable: true })
+  reviewerName: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  creditRating: string;
+
+  @Column({ type: 'enum', enum: VerificationTier, default: VerificationTier.STANDARD, nullable: true })
+  verificationTier: VerificationTier;
+  @Column({ type: 'varchar', default: 'not_started' })
+  status: 'not_started' | 'in_progress' | 'submitted' | 'under_review' | 'approved' | 'rejected';
   // Verification document URLs (one column per type)
   @Column({ nullable: true })
   passportUrl: string;

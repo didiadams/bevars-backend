@@ -5,7 +5,7 @@ import { CreateSourcingRequestDto } from './dto/create-sourcing-request.dto';
 import { UpdateSourcingRequestDto } from './dto/update-sourcing-request.dto';
 import { SourcingRequestService } from './sourcing-request.service';
 
-@Controller('api/v1/sourcing-request')
+@Controller('sourcing-request')
 export class SourcingRequestController {
   constructor(private readonly sourcingRequestService: SourcingRequestService) {}
 

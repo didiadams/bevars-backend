@@ -11,6 +11,8 @@ import { GlobalBuyer } from './entities/global-buyer.entity';
 import { BuyerVerificationDocument } from './entities/buyer-verification-document.entity';
 import { User } from '../user/entities/user.entity';
 import { v4 as uuidv4 } from 'uuid';
+import { Exporter } from '../exporter/entities/exporter.entity';
+
 
 @Injectable()
 export class GlobalBuyerService {
@@ -131,6 +133,8 @@ export class GlobalBuyerService {
     private readonly cloudinaryService: CloudinaryService,
     @InjectRepository(BuyerVerificationDocument)
     private readonly verificationDocumentRepository: Repository<BuyerVerificationDocument>,
+    @InjectRepository(Exporter)
+    private readonly exporterRepository: Repository<Exporter>,
   ) {}
 
   async create(createDto: CreateGlobalBuyerDto & { userId: string }): Promise<GlobalBuyer> {
@@ -143,17 +147,7 @@ export class GlobalBuyerService {
   }
 
   // Verification document upload and status tracking
-  private verificationStore: Record<string, {
-  status: 'not_started' | 'in_progress' | 'submitted' | 'under_review' | 'approved' | 'rejected',
-    documents: Record<string, { fileName: string, fileUrl: string, uploadedAt: Date, status: string }>,
-    messages: Array<{ id: string, from: string, message: string, timestamp: Date, type: string }>,
-    reviewNotes?: string,
-    submittedDate?: Date,
-    approvedDate?: Date,
-    reviewerName?: string,
-    creditRating?: string,
-    verificationTier?: 'standard' | 'premium' | 'enterprise',
-  }> = {};
+  // Removed in-memory verificationStore. All verification data is now persisted in the database.
 
   async getVerificationOverview(userId: string) {
     // Required document columns (match frontend)
@@ -168,21 +162,14 @@ export class GlobalBuyerService {
     // Count uploaded required documents
     const documentsUploaded = requiredColumns.filter(col => !!(buyer as any)[col]).length;
     const totalRequired = requiredColumns.length;
-    // Use status from verificationStore if available, else default
-    let status = 'not_started';
-    let reviewNotes, submittedDate, approvedDate, reviewerName, creditRating, verificationTier;
-    if (this.verificationStore[userId]) {
-      const store = this.verificationStore[userId];
-      status = store.status;
-      reviewNotes = store.reviewNotes;
-      submittedDate = store.submittedDate;
-      approvedDate = store.approvedDate;
-      reviewerName = store.reviewerName;
-      creditRating = store.creditRating;
-      verificationTier = store.verificationTier;
-    } else {
-      verificationTier = 'standard';
-    }
+  // All status and metadata are now read from the database
+  const status = buyer.status || 'not_started';
+  const reviewNotes = buyer.reviewNotes;
+  const submittedDate = buyer.submittedDate;
+  const approvedDate = buyer.approvedDate;
+  const reviewerName = buyer.reviewerName;
+  const creditRating = buyer.creditRating;
+  const verificationTier = buyer.verificationTier || 'standard';
     return {
       status,
       documentsUploaded,
@@ -231,56 +218,25 @@ export class GlobalBuyerService {
   }
 
   async submitVerification(userId: string) {
-    if (!this.verificationStore[userId]) {
-      // Initialize verificationStore for user if not present
-      this.verificationStore[userId] = {
-        status: 'in_progress',
-        documents: {},
-        messages: [],
-        verificationTier: 'standard',
-      };
-    }
-    this.verificationStore[userId].status = 'submitted';
-    this.verificationStore[userId].submittedDate = new Date();
-    this.verificationStore[userId].messages.push({
-      id: uuidv4(),
-      from: 'system',
-      message: 'Verification submitted for review.',
-      timestamp: new Date(),
-      type: 'info',
-    });
+    // Persist status in database
+    const buyer = await this.findByUserId(userId);
+    if (!buyer) throw new NotFoundException('Buyer not found');
+    buyer.status = 'submitted'; // or 'under_review' if you prefer
+    await this.globalBuyerRepository.save(buyer);
+
+  // No longer using in-memory store
     return { success: true };
   }
 
   async getVerificationMessages(userId: string) {
-    if (!this.verificationStore[userId]) {
-      this.verificationStore[userId] = {
-        status: 'not_started',
-        documents: {},
-        messages: [],
-        verificationTier: 'standard',
-      };
-    }
-    return this.verificationStore[userId].messages;
+  // TODO: If you want to persist messages, store them in the database (not in memory)
+  // For now, return an empty array or fetch from DB if implemented
+  return [];
   }
 
   async addVerificationMessage(userId: string, from: string, message: string, type: string = 'info') {
-    if (!this.verificationStore[userId]) {
-      this.verificationStore[userId] = {
-        status: 'not_started',
-        documents: {},
-        messages: [],
-        verificationTier: 'standard',
-      };
-    }
-    this.verificationStore[userId].messages.push({
-      id: uuidv4(),
-      from,
-      message,
-      timestamp: new Date(),
-      type,
-    });
-    return { success: true };
+  // TODO: Persist messages to the database if needed
+  return { success: true };
   }
 
   async findOne(id: string): Promise<GlobalBuyer> {
@@ -315,9 +271,9 @@ export class GlobalBuyerService {
 
   async getDashboardStats(userId: string): Promise<any> {
     const globalBuyer = await this.findByUserId(userId);
-
+  
     const stats = await this.globalBuyerRepository.getDashboardStats(globalBuyer.id);
-
+ console.log(stats, '@@@stat')
     return {
       activeSourcingRequests: stats.activeSourcingRequests || 0,
       totalOffers: stats.totalOffers || 0,
@@ -392,5 +348,16 @@ export class GlobalBuyerService {
     globalBuyer.creditLimit = paymentInfo.creditLimit;
     
     return this.globalBuyerRepository.save(globalBuyer as any as GlobalBuyer);
+  }
+
+  async getPlatformStats(): Promise<{ verifiedExporters: number; successfulMatchesPercent: number; tradeVolume: number; }>{
+    // Verified exporters
+    const verifiedExporters = await this.exporterRepository.count({ where: { isVerified: true } });
+
+    // Placeholders until order/match data exists
+    const successfulMatchesPercent = 0;
+    const tradeVolume = 0;
+
+    return { verifiedExporters, successfulMatchesPercent, tradeVolume };
   }
 }

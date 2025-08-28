@@ -127,6 +127,11 @@ export class GlobalBuyerController {
     return this.globalBuyerService.getReceivedOffers(req.user.id);
   }
 
+  @Get('platform/stats')
+  async getPlatformStats(): Promise<any> {
+    return this.globalBuyerService.getPlatformStats();
+  }
+
   @Post('offers/:offerId/accept')
   async acceptOffer(@Param('offerId') offerId: string, @Request() req): Promise<any> {
     return this.globalBuyerService.acceptOffer(offerId, req.user.id);

@@ -5,7 +5,7 @@ import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 
 
-@Controller('api/v1/offer')
+@Controller('offer')
 @UseGuards(JwtAuthGuard)
 export class OfferController {
   constructor(private readonly offerService: OfferService) {}

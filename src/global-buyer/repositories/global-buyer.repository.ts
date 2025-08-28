@@ -65,11 +65,17 @@ export class GlobalBuyerRepository extends Repository<GlobalBuyer> {
       .where('buyer.id = :id', { id: globalBuyerId })
       .getRawOne();
 
+    // Placeholder metrics (no concrete schema to compute real values yet)
+    const averageResponseTimeHours = 0;
+    const successRatePercent = 0;
+
     return {
       activeSourcingRequests: parseInt(result.activeSourcingRequests) || 0,
       totalOffers: parseInt(result.totalOffers) || 0,
       averageOrderValue: parseFloat(result.averageOrderValue) || 0,
       preferredExporters: 0, // Would be calculated from a preferred exporters table
+      averageResponseTimeHours,
+      successRatePercent,
     };
   }
 
