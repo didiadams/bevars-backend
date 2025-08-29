@@ -310,6 +310,25 @@ export class SourcingRequestService {
     await this.sourcingRequestRepository.increment({ id: requestId }, 'offerCount', 1);
   }
 
+  async decrementOfferCount(requestId: string): Promise<void> {
+    await this.sourcingRequestRepository.decrement({ id: requestId }, 'offerCount', 1);
+  }
+
+  async syncOfferCounts(): Promise<void> {
+    const requests = await this.sourcingRequestRepository.find({
+      relations: ['offers'],
+    });
+
+    for (const request of requests) {
+      const actualOfferCount = request.offers?.length || 0;
+      if (request.offerCount !== actualOfferCount) {
+        await this.sourcingRequestRepository.update(request.id, {
+          offerCount: actualOfferCount,
+        });
+      }
+    }
+  }
+
   async getMyRequests(userId: string, status?: RequestStatus): Promise<SourcingRequest[]> {
     const where: any = { globalBuyerId: userId };
     if (status) {

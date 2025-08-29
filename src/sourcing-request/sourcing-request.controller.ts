@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 import { CreateSourcingRequestDto } from './dto/create-sourcing-request.dto';
@@ -9,6 +10,7 @@ import { SourcingRequestService } from './sourcing-request.service';
 export class SourcingRequestController {
   constructor(private readonly sourcingRequestService: SourcingRequestService) {}
 
+  @UseGuards(JwtAuthGuard)
   @Get()
   async findAll(
     @Query('page') page: number = 1,
@@ -164,5 +166,13 @@ export class SourcingRequestController {
     }
     
     return { message: 'Offer rejection endpoint - to be implemented with offer service' };
+  }
+
+  @Post('sync-offer-counts')
+  @ApiOperation({ summary: 'Sync offer counts for all sourcing requests' })
+  @ApiResponse({ status: 200, description: 'Offer counts synced successfully' })
+  async syncOfferCounts() {
+    await this.sourcingRequestService.syncOfferCounts();
+    return { message: 'Offer counts synced successfully' };
   }
 }

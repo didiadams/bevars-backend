@@ -11,7 +11,7 @@ export class OfferRepository extends Repository<Offer> {
   async findBySourcingRequestId(sourcingRequestId: string): Promise<Offer[]> {
     return this.find({
       where: { sourcingRequestId },
-      relations: ['exporter', 'exporter.user', 'sourcingRequest'],
+      relations: ['exporter', 'exporter.user', 'sourcingRequest', 'sourcingRequest.globalBuyer', 'sourcingRequest.globalBuyer.user'],
       order: { createdAt: 'DESC' },
     });
   }

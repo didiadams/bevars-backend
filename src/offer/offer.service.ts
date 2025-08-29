@@ -1,11 +1,14 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { OfferRepository } from './repositories/offer.repository';
 import { Offer, OfferStatus } from './entities/offer.entity';
+import { SourcingRequestService } from '../sourcing-request/sourcing-request.service';
 
 @Injectable()
 export class OfferService {
   constructor(
     private readonly offerRepository: OfferRepository,
+    @Inject(forwardRef(() => SourcingRequestService))
+    private readonly sourcingRequestService: SourcingRequestService,
   ) {}
 
   async create(createDto: any & { exporterId: string }): Promise<Offer> {
@@ -25,7 +28,12 @@ export class OfferService {
       totalPrice: createDto.pricePerUnit * createDto.availableQuantity,
     });
 
-    return this.offerRepository.save(offer) as any as Offer;
+    const savedOffer = await this.offerRepository.save(offer) as any as Offer;
+    
+    // Increment the offer count in the sourcing request
+    await this.sourcingRequestService.incrementOfferCount(createDto.sourcingRequestId);
+    
+    return savedOffer;
   }
 
   async findAll(filters?: {
@@ -61,7 +69,7 @@ export class OfferService {
     // Optional access control check
     if (userId) {
       const hasAccess = 
-        offer.exporterId === userId || 
+        offer.exporter?.userId === userId || 
         offer.sourcingRequest.globalBuyerId === userId;
 
       if (!hasAccess) {
@@ -302,7 +310,7 @@ export class OfferService {
 
     // Check if user has access to this offer
     const hasAccess = 
-      offer.exporterId === userId || 
+      offer.exporter?.userId === userId || 
       offer.sourcingRequest.globalBuyerId === userId;
 
     if (!hasAccess) {
@@ -349,11 +357,27 @@ export class OfferService {
     // Check if user has access to these offers
     if (offers.length > 0) {
       const firstOffer = offers[0];
-      const hasAccess = 
-        firstOffer.sourcingRequest.globalBuyerId === userId ||
-        offers.some(offer => offer.exporterId === userId);
+      
+      // Check if user is the global buyer of the sourcing request
+      // The issue is here: we need to check if the user OWNS the global buyer record
+      // not if the user ID equals the globalBuyerId
+      const isGlobalBuyer = firstOffer.sourcingRequest.globalBuyer?.userId === userId;
+      
+      // Check if user is one of the exporters who submitted offers
+      const isExporter = offers.some(offer => {
+        // Add null checks for safety
+        return offer.exporter && offer.exporter.userId === userId;
+      });
+
+      const hasAccess = isGlobalBuyer || isExporter;
 
       if (!hasAccess) {
+        console.log('=== PERMISSION CHECK FAILED ===');
+        console.log('User ID:', userId);
+        console.log('Sourcing Request Global Buyer ID:', firstOffer.sourcingRequest.globalBuyerId);
+        console.log('Sourcing Request Global Buyer User ID:', firstOffer.sourcingRequest.globalBuyer?.userId);
+        console.log('Is Global Buyer:', isGlobalBuyer);
+        console.log('Is Exporter:', isExporter);
         throw new ForbiddenException('You do not have access to these offers');
       }
     }

@@ -83,6 +83,8 @@ export class GlobalBuyerRepository extends Repository<GlobalBuyer> {
     return this.createQueryBuilder('buyer')
       .leftJoinAndSelect('buyer.sourcingRequests', 'request')
       .leftJoinAndSelect('request.offers', 'offer')
+      .leftJoinAndSelect('offer.exporter', 'exporter')
+      .leftJoinAndSelect('exporter.user', 'exporterUser')
       .where('buyer.id = :id', { id: globalBuyerId })
       .orderBy('request.createdAt', 'DESC')
       .getMany();

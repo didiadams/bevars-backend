@@ -1,18 +1,23 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindManyOptions } from 'typeorm';
+import { Repository, FindManyOptions, Between, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
 import { Exporter, VerificationStatus, ExporterCategory } from './entities/exporter.entity';
 import { CreateExporterDto } from './dto/create-exporter.dto';
-
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { UpdateExporterDto } from './dto/update-exporter.dto';
 import { VerifyExporterDto } from './dto/verify-exporter.dto';
+import { SourcingRequest, RequestStatus } from '../sourcing-request/entities/sourcing-request.entity';
+import { Offer, OfferStatus } from '../offer/entities/offer.entity';
 
 @Injectable()
 export class ExporterService {
   constructor(
     @InjectRepository(Exporter)
     private exporterRepository: Repository<Exporter>,
+    @InjectRepository(SourcingRequest)
+    private sourcingRequestRepository: Repository<SourcingRequest>,
+    @InjectRepository(Offer)
+    private offerRepository: Repository<Offer>,
     private cloudinaryService: CloudinaryService,
   ) {}
 
@@ -117,10 +122,13 @@ export class ExporterService {
       throw new BadRequestException('Exporter is already verified');
     }
 
+    // Align required documents with frontend IDs
     const requiredDocuments = [
-      'companyRegistration',
-      'exportLicense',
-      'taxCertificate',
+      'cac_certificate',
+      'export_license',
+      'nafdac_certificate',
+      'phytosanitary_certificate',
+      'tax_clearance',
     ];
 
     const submittedDocuments = Object.keys(exporter.verificationDocuments || {});
@@ -137,6 +145,63 @@ export class ExporterService {
     exporter.verificationStatus = VerificationStatus.UNDER_REVIEW;
 
     return await this.exporterRepository.save(exporter);
+  }
+
+  // Verification overview mirroring GlobalBuyerService
+  async getVerificationOverview(userId: string) {
+    const exporter = await this.findByUserId(userId);
+    // Align required documents with frontend IDs
+    const requiredIds = [
+      'cac_certificate',
+      'export_license',
+      'nafdac_certificate',
+      'phytosanitary_certificate',
+      'tax_clearance',
+    ];
+    const docs = exporter.verificationDocuments || {};
+    const documentsUploaded = requiredIds.filter(k => !!(docs as any)[k]).length;
+    const totalRequired = requiredIds.length;
+    const status = exporter.verificationStatus
+      ? exporter.verificationStatus.toLowerCase()
+      : 'not_started';
+    return {
+      status,
+      documentsUploaded,
+      totalRequired,
+      reviewNotes: exporter.verificationNotes,
+      submittedDate: exporter.verificationReviewedAt, // best available timestamp
+      approvedDate: exporter.isVerified ? exporter.verificationReviewedAt : null,
+      reviewerName: exporter.verificationReviewedBy,
+      creditRating: undefined,
+      verificationTier: undefined,
+    };
+  }
+
+  async listVerificationDocuments(userId: string) {
+    const exporter = await this.findByUserId(userId);
+    const docs = exporter.verificationDocuments || {};
+    return Object.keys(docs).map((key) => ({ documentId: key, fileUrl: (docs as any)[key] }));
+  }
+
+  async getVerificationDocument(userId: string, documentId: string) {
+    const exporter = await this.findByUserId(userId);
+    const docs = exporter.verificationDocuments || {};
+    const fileUrl = (docs as any)[documentId];
+    if (!fileUrl) {
+      throw new NotFoundException('Document not found');
+    }
+    return { documentId, fileUrl };
+  }
+
+  async deleteVerificationDocument(userId: string, documentId: string) {
+    const exporter = await this.findByUserId(userId);
+    const docs = { ...(exporter.verificationDocuments || {}) } as Record<string, string>;
+    if (!docs[documentId]) {
+      throw new NotFoundException('Document not found');
+    }
+    delete docs[documentId];
+    await this.exporterRepository.update(exporter.id, { verificationDocuments: docs as any });
+    return { success: true };
   }
 
   async verifyExporter(
@@ -268,6 +333,12 @@ export class ExporterService {
     return await this.exporterRepository.save(exporter);
   }
 
+  async updateCropsByUserId(userId: string, crops: string[]): Promise<Exporter> {
+    const exporter = await this.findByUserId(userId);
+    (exporter as any).primaryCrops = crops; // assuming a json/text array field exists or will be added
+    return await this.exporterRepository.save(exporter);
+  }
+
   async uploadVerificationDocuments(
     userId: string,
     uploadDto: { documentType: string; fileUrl: string }[]
@@ -379,5 +450,275 @@ export class ExporterService {
     }
 
     return exporter.offers || [];
+  }
+
+  // Dashboard methods
+  async getDashboardStats(userId: string) {
+    const exporter = await this.findByUserId(userId);
+    
+    // Get active offers count
+    const activeOffers = await this.offerRepository.count({
+      where: { 
+        exporterId: exporter.id,
+        status: OfferStatus.PENDING 
+      }
+    });
+
+    // Get new requests count (active requests not expired)
+    const newRequests = await this.sourcingRequestRepository.count({
+      where: {
+        status: RequestStatus.ACTIVE,
+        quotationDeadline: MoreThanOrEqual(new Date()),
+        isPublic: true
+      }
+    });
+
+    // Get completed deals (accepted offers)
+    const completedDeals = await this.offerRepository.count({
+      where: { 
+        exporterId: exporter.id,
+        status: OfferStatus.ACCEPTED 
+      }
+    });
+
+    // Calculate total revenue from accepted offers
+    const acceptedOffers = await this.offerRepository.find({
+      where: { 
+        exporterId: exporter.id,
+        status: OfferStatus.ACCEPTED 
+      },
+      select: ['totalPrice']
+    });
+    
+    const revenue = acceptedOffers.reduce((sum, offer) => sum + Number(offer.totalPrice), 0);
+
+    // Calculate success rate (accepted offers / total offers)
+    const totalOffers = await this.offerRepository.count({
+      where: { exporterId: exporter.id }
+    });
+    
+    const successRate = totalOffers > 0 ? Math.round((completedDeals / totalOffers) * 100) : 0;
+
+    // Calculate growth rate (this month vs last month)
+    const now = new Date();
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    
+    const thisMonthOffers = await this.offerRepository.count({
+      where: { 
+        exporterId: exporter.id,
+        createdAt: MoreThanOrEqual(thisMonth)
+      }
+    });
+    
+    const lastMonthOffers = await this.offerRepository.count({
+      where: { 
+        exporterId: exporter.id,
+        createdAt: Between(lastMonth, thisMonth)
+      }
+    });
+
+    const growthRate = lastMonthOffers > 0 
+      ? `+${Math.round(((thisMonthOffers - lastMonthOffers) / lastMonthOffers) * 100)}%`
+      : "+0%";
+
+    // Calculate average response time (mock for now, would need activity tracking)
+    const avgResponseTime = "1.8h"; // This would need to be calculated from actual response times
+
+    return {
+      activeOffers,
+      newRequests,
+      completedDeals,
+      revenue,
+      growthRate,
+      avgResponseTime,
+      successRate,
+      rating: exporter.averageRating || 0,
+    };
+  }
+
+  async getDashboardRequests(userId: string) {
+    const exporter = await this.findByUserId(userId);
+    
+    // Get active requests that match exporter's product categories
+    const requests = await this.sourcingRequestRepository.find({
+      where: {
+        status: RequestStatus.ACTIVE,
+        quotationDeadline: MoreThanOrEqual(new Date()),
+        isPublic: true
+      },
+      relations: ['globalBuyer', 'globalBuyer.user'],
+      order: { createdAt: 'DESC' },
+      take: 5
+    });
+
+    return requests.map(request => ({
+      id: request.id,
+      title: request.title,
+      buyer: request.globalBuyer.user?.firstName 
+        ? `${request.globalBuyer.user.firstName} ${request.globalBuyer.user.lastName}`
+        : request.globalBuyer.user?.companyName || 'Unknown Buyer',
+      budget: request.budgetMin && request.budgetMax 
+        ? `$${request.budgetMin.toLocaleString()} - $${request.budgetMax.toLocaleString()}`
+        : request.budgetMin 
+        ? `$${request.budgetMin.toLocaleString()}+`
+        : 'Budget not specified',
+      deadline: new Date(request.quotationDeadline).toLocaleDateString(),
+      urgency: request.urgencyLevel,
+      location: request.deliveryCountry,
+      description: request.description.substring(0, 100) + (request.description.length > 100 ? '...' : ''),
+    }));
+  }
+
+  async getDashboardOffers(userId: string) {
+    const exporter = await this.findByUserId(userId);
+    
+    const offers = await this.offerRepository.find({
+      where: { exporterId: exporter.id },
+      relations: ['sourcingRequest', 'sourcingRequest.globalBuyer', 'sourcingRequest.globalBuyer.user'],
+      order: { createdAt: 'DESC' },
+      take: 5
+    });
+
+    return offers.map(offer => ({
+      id: offer.id,
+      request: offer.sourcingRequest.title,
+      buyer: offer.sourcingRequest.globalBuyer.user?.firstName 
+        ? `${offer.sourcingRequest.globalBuyer.user.firstName} ${offer.sourcingRequest.globalBuyer.user.lastName}`
+        : offer.sourcingRequest.globalBuyer.user?.companyName || 'Unknown Buyer',
+      price: `$${offer.totalPrice.toLocaleString()}`,
+      status: offer.status,
+      submittedAt: this.getTimeAgo(offer.createdAt),
+      urgency: offer.sourcingRequest.urgencyLevel,
+    }));
+  }
+
+  async getDashboardActivity(userId: string) {
+    if (!userId) {
+      throw new Error('User ID is required');
+    }
+    
+    const exporter = await this.findByUserId(userId);
+    if (!exporter) {
+      throw new Error('Exporter not found');
+    }
+    
+    // Get recent offers
+    const recentOffers = await this.offerRepository.find({
+      where: { exporterId: exporter.id },
+      relations: ['sourcingRequest', 'sourcingRequest.globalBuyer', 'sourcingRequest.globalBuyer.user'],
+      order: { createdAt: 'DESC' },
+      take: 3
+    });
+
+    const activities = [];
+
+    // Add offer submissions
+    for (const offer of recentOffers) {
+      activities.push({
+        type: "offer_submitted",
+        message: `Submitted offer for ${offer.sourcingRequest.title}`,
+        time: this.getTimeAgo(offer.createdAt),
+      });
+    }
+
+    // Add profile views (mock for now)
+    activities.push({
+      type: "profile_viewed",
+      message: "Your profile was viewed 12 times",
+      time: "4h ago",
+    });
+
+    // Add message received (mock for now)
+    if (recentOffers.length > 0) {
+      const buyerName = recentOffers[0].sourcingRequest?.globalBuyer?.user?.firstName || 
+                       recentOffers[0].sourcingRequest?.globalBuyer?.user?.companyName || 
+                       'Buyer';
+      activities.push({
+        type: "message_received",
+        message: `New message from ${buyerName}`,
+        time: "6h ago",
+      });
+    }
+
+    return activities.slice(0, 4); // Return max 4 activities
+  }
+
+  async getDashboardNotifications(userId: string) {
+    const exporter = await this.findByUserId(userId);
+    
+    const notifications = [];
+
+    // Check for new requests matching exporter's categories
+    const newRequests = await this.sourcingRequestRepository.count({
+      where: {
+        status: RequestStatus.ACTIVE,
+        quotationDeadline: MoreThanOrEqual(new Date()),
+        isPublic: true,
+        createdAt: MoreThanOrEqual(new Date(Date.now() - 24 * 60 * 60 * 1000)) // Last 24 hours
+      }
+    });
+
+    if (newRequests > 0) {
+      notifications.push({
+        id: 1,
+        type: "request",
+        message: `${newRequests} new request${newRequests > 1 ? 's' : ''} available`,
+        time: "3m ago",
+        urgent: true,
+      });
+    }
+
+    // Check for offer status changes
+    const pendingOffers = await this.offerRepository.count({
+      where: { 
+        exporterId: exporter.id,
+        status: OfferStatus.PENDING 
+      }
+    });
+
+    if (pendingOffers > 0) {
+      notifications.push({
+        id: 2,
+        type: "offer",
+        message: `${pendingOffers} offer${pendingOffers > 1 ? 's' : ''} pending review`,
+        time: "25m ago",
+        urgent: false,
+      });
+    }
+
+    // Check for accepted offers
+    const acceptedOffers = await this.offerRepository.find({
+      where: { 
+        exporterId: exporter.id,
+        status: OfferStatus.ACCEPTED,
+        createdAt: MoreThanOrEqual(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) // Last 7 days
+      },
+      relations: ['sourcingRequest', 'sourcingRequest.globalBuyer', 'sourcingRequest.globalBuyer.user']
+    });
+
+    if (acceptedOffers.length > 0) {
+      notifications.push({
+        id: 3,
+        type: "offer",
+        message: `Your offer for ${acceptedOffers[0].sourcingRequest.title} was accepted`,
+        time: "1h ago",
+        urgent: false,
+      });
+    }
+
+    return notifications;
+  }
+
+  // Helper method to calculate time ago
+  private getTimeAgo(date: Date): string {
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)}d ago`;
+    return `${Math.floor(diffInSeconds / 2592000)}mo ago`;
   }
 }

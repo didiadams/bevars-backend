@@ -146,6 +146,13 @@ export class Exporter {
   @OneToMany(() => Offer, (offer) => offer.exporter)
   offers: Offer[];
 
+  @Column({
+    type: 'simple-array',
+    nullable: true,
+    comment: 'Primary crops selected by exporter for their specialization',
+  })
+  primaryCrops: string[];
+
   @CreateDateColumn()
   createdAt: Date;
 

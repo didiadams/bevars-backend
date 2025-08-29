@@ -1,12 +1,13 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, Patch, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ExporterService } from './exporter.service';
 import { CreateExporterDto } from './dto/create-exporter.dto';
 import { UpdateExporterDto } from './dto/update-exporter.dto';
 import { UploadVerificationDocumentsDto } from './dto/upload-verification-documents.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 
-@Controller('api/v1/exporter')
+@Controller('exporter')
 @UseGuards(JwtAuthGuard)
 export class ExporterController {
   constructor(private readonly exporterService: ExporterService) {}
@@ -43,6 +44,14 @@ export class ExporterController {
     return this.exporterService.updateByUserId(req.user.id, updateExporterDto);
   }
 
+  @Put('crops')
+  async updateExporterCrops(
+    @Body() body: { crops: string[] },
+    @Request() req,
+  ) {
+    return this.exporterService.updateCropsByUserId(req.user.id, body.crops || []);
+  }
+
   @Post('verification/upload')
   async uploadVerificationDocument(
     @Body() uploadDto: any,
@@ -60,10 +69,78 @@ export class ExporterController {
     return this.exporterService.uploadVerificationDocuments(req.user.id, uploadDto.documents);
   }
 
+  // Upload a single verification document file (multipart)
+  @Post('verification/documents/:documentType')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadVerificationDocumentFile(
+    @Param('documentType') documentType: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req
+  ) {
+    const exporter = await this.exporterService.findByUserId(req.user.id);
+    return this.exporterService.uploadVerificationDocument(exporter.id, documentType, file);
+  }
+
+  // List uploaded verification documents
+  @Get('verification/documents')
+  async listVerificationDocuments(@Request() req) {
+    return this.exporterService.listVerificationDocuments(req.user.id);
+  }
+
+  // Fetch a single verification document by documentId
+  @Get('verification/documents/:documentId')
+  async getVerificationDocument(
+    @Param('documentId') documentId: string,
+    @Request() req
+  ) {
+    return this.exporterService.getVerificationDocument(req.user.id, documentId);
+  }
+
+  // Delete an uploaded verification document
+  @Delete('verification/documents/:documentId')
+  async deleteVerificationDocument(
+    @Param('documentId') documentId: string,
+    @Request() req
+  ) {
+    return this.exporterService.deleteVerificationDocument(req.user.id, documentId);
+  }
+
+  // Verification overview/status for dashboard
+  @Get('verification/overview')
+  async getVerificationOverview(@Request() req) {
+    return this.exporterService.getVerificationOverview(req.user.id);
+  }
+
   @Put('verification/submit')
   async submitForVerification(@Request() req) {
     const exporter = await this.exporterService.findByUserId(req.user.id);
     return this.exporterService.submitForVerification(exporter.id);
+  }
+
+  // Dashboard endpoints
+  @Get('dashboard/stats')
+  async getDashboardStats(@Request() req) {
+    return this.exporterService.getDashboardStats(req.user.id);
+  }
+
+  @Get('dashboard/requests')
+  async getDashboardRequests(@Request() req) {
+    return this.exporterService.getDashboardRequests(req.user.id);
+  }
+
+  @Get('dashboard/offers')
+  async getDashboardOffers(@Request() req) {
+    return this.exporterService.getDashboardOffers(req.user.id);
+  }
+
+  @Get('dashboard/activity')
+  async getDashboardActivity(@Request() req) {
+    return this.exporterService.getDashboardActivity(req.user.id);
+  }
+
+  @Get('dashboard/notifications')
+  async getDashboardNotifications(@Request() req) {
+    return this.exporterService.getDashboardNotifications(req.user.id);
   }
 
   @Get()

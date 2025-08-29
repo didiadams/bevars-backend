@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Offer } from './entities/offer.entity';
 import { OfferController } from './offer.controller';
@@ -14,7 +14,7 @@ import { OfferService } from './offer.service';
     TypeOrmModule.forFeature([Offer]),
     CommonModule,
     ExporterModule,
-    SourcingRequestModule,
+    forwardRef(() => SourcingRequestModule),
   ],
   controllers: [OfferController],
   providers: [OfferService, OfferRepository],
