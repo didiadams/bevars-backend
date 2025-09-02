@@ -420,7 +420,7 @@ export class ExporterService {
 
     if (filters.search) {
       queryBuilder.andWhere(
-        '(exporter.businessDescription ILIKE :search OR user.username ILIKE :search)',
+        '(exporter.businessDescription LIKE :search OR user.companyName LIKE :search OR user.firstName LIKE :search OR user.lastName LIKE :search OR user.email LIKE :search)',
         { search: `%${filters.search}%` }
       );
     }
