@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException,
 import { OfferRepository } from './repositories/offer.repository';
 import { Offer, OfferStatus } from './entities/offer.entity';
 import { SourcingRequestService } from '../sourcing-request/sourcing-request.service';
+import { OrderService } from '../order/order.service';
+import { ChatService } from '../chat/chat.service';
 
 @Injectable()
 export class OfferService {
@@ -9,6 +11,10 @@ export class OfferService {
     private readonly offerRepository: OfferRepository,
     @Inject(forwardRef(() => SourcingRequestService))
     private readonly sourcingRequestService: SourcingRequestService,
+    @Inject(forwardRef(() => OrderService))
+    private readonly orderService: OrderService,
+    @Inject(forwardRef(() => ChatService))
+    private readonly chatService: ChatService,
   ) {}
 
   async create(createDto: any & { exporterId: string }): Promise<Offer> {
@@ -151,7 +157,21 @@ export class OfferService {
       }
     }
 
-    return this.offerRepository.save(offer) as any as Offer;
+    const savedOffer = await this.offerRepository.save(offer) as any as Offer;
+
+    // Automatically create an order when offer is accepted
+    try {
+      const order = await this.orderService.createFromOffer(savedOffer);
+
+      // Initialize chat room for buyer-exporter communication
+      await this.chatService.createChatForOrder(order);
+
+    } catch (error) {
+      console.error('Error creating order or initializing chat:', error);
+      // Don't fail the offer acceptance if order/chat creation fails
+    }
+
+    return savedOffer;
   }
 
   async reject(id: string, globalBuyerId: string, rejectionReason?: string): Promise<Offer> {

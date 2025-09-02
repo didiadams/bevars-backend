@@ -1,14 +1,19 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, Inject, forwardRef } from '@nestjs/common';
 import { ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 import { CreateSourcingRequestDto } from './dto/create-sourcing-request.dto';
 import { UpdateSourcingRequestDto } from './dto/update-sourcing-request.dto';
 import { SourcingRequestService } from './sourcing-request.service';
+import { GlobalBuyerService } from '../global-buyer/global-buyer.service';
 
 @Controller('sourcing-request')
 export class SourcingRequestController {
-  constructor(private readonly sourcingRequestService: SourcingRequestService) {}
+  constructor(
+    private readonly sourcingRequestService: SourcingRequestService,
+    @Inject(forwardRef(() => GlobalBuyerService))
+    private readonly globalBuyerService: GlobalBuyerService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get()
@@ -75,28 +80,37 @@ export class SourcingRequestController {
   @UseGuards(JwtAuthGuard)
   @Post()
   async create(@Body() createDto: CreateSourcingRequestDto, @Request() req) {
+    // Get the correct global buyer ID for this user
+    const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+    
     return this.sourcingRequestService.create({
       ...createDto,
-      globalBuyerId: req.user.globalBuyerId || req.user.id,
+      globalBuyerId: globalBuyer.id,
     });
   }
 
   @UseGuards(JwtAuthGuard)
   @Put(':id')
   async update(@Param('id') id: string, @Body() updateDto: UpdateSourcingRequestDto, @Request() req) {
-    return this.sourcingRequestService.update(id, updateDto, req.user.id);
+    // Get the global buyer ID for authorization
+    const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+    return this.sourcingRequestService.update(id, updateDto, globalBuyer.id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
   async remove(@Param('id') id: string, @Request() req) {
-    return this.sourcingRequestService.remove(id, req.user.id);
+    // Get the global buyer ID for authorization
+    const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+    return this.sourcingRequestService.remove(id, globalBuyer.id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':id/close')
   async close(@Param('id') id: string, @Request() req) {
-    return this.sourcingRequestService.close(id, req.user.id);
+    // Get the global buyer ID for authorization
+    const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+    return this.sourcingRequestService.close(id, globalBuyer.id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -106,7 +120,9 @@ export class SourcingRequestController {
     @Body() extendDto: { newDeadline: string; reason?: string },
     @Request() req
   ) {
-    return this.sourcingRequestService.extendDeadline(id, extendDto, req.user.id);
+    // Get the global buyer ID for authorization
+    const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+    return this.sourcingRequestService.extendDeadline(id, extendDto, globalBuyer.id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -116,7 +132,9 @@ export class SourcingRequestController {
     @Body() inviteDto: { exporterId: string; message?: string },
     @Request() req
   ) {
-    return this.sourcingRequestService.inviteExporter(id, inviteDto, req.user.id);
+    // Get the global buyer ID for authorization
+    const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+    return this.sourcingRequestService.inviteExporter(id, inviteDto, globalBuyer.id);
   }
 
   @Get(':id/offers')
@@ -127,13 +145,34 @@ export class SourcingRequestController {
   @Get(':id/analytics')
   @UseGuards(JwtAuthGuard)
   async getAnalytics(@Param('id') id: string, @Request() req) {
-    return this.sourcingRequestService.getAnalytics(id, req.user.id);
+    // Get the global buyer ID for authorization
+    const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+    return this.sourcingRequestService.getAnalytics(id, globalBuyer.id);
   }
 
   @Get('my-requests')
   @UseGuards(JwtAuthGuard)
   async getMyRequests(@Request() req, @Query('status') status?: string) {
-    return this.sourcingRequestService.getMyRequests(req.user.globalBuyerId || req.user.id, status as any);
+    // Get the global buyer ID to fetch their requests
+    const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+    return this.sourcingRequestService.getMyRequests(globalBuyer.id, status as any);
+  }
+
+  @Get(':id/offers')
+  @UseGuards(JwtAuthGuard)
+  async getOffersForRequest(@Param('id') id: string, @Request() req) {
+    // Verify the user has access to this sourcing request
+    const request = await this.sourcingRequestService.findOne(id, req.user.id);
+    
+    // Get global buyer to verify ownership
+    const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+    if (request.globalBuyerId !== globalBuyer.id) {
+      throw new Error('You can only view offers for your own sourcing requests');
+    }
+    
+    // Return offers for this sourcing request
+    // This would need the offer service integration
+    return { message: 'Get offers endpoint - to be implemented with offer service integration', requestId: id };
   }
 
   @Post(':id/offers/:offerId/accept')

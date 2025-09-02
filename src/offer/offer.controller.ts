@@ -1,36 +1,39 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, Patch, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, Patch, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OfferService } from './offer.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
+import { ExporterService } from '../exporter/exporter.service';
+import { GlobalBuyerService } from '../global-buyer/global-buyer.service';
 
 
 @Controller('offer')
 @UseGuards(JwtAuthGuard)
 export class OfferController {
-  constructor(private readonly offerService: OfferService) {}
+  constructor(
+    private readonly offerService: OfferService,
+    @Inject(forwardRef(() => ExporterService))
+    private readonly exporterService: ExporterService,
+    @Inject(forwardRef(() => GlobalBuyerService))
+    private readonly globalBuyerService: GlobalBuyerService,
+  ) {}
 
   @Post()
   async createOffer(@Body() createDto: CreateOfferDto, @Request() req) {
-    // Ensure we have the correct exporter ID
-    const exporterId = req.user.exporterId;
-    if (!exporterId) {
-      throw new BadRequestException('User is not associated with an exporter');
-    }
+    // Get the actual exporter entity for this user
+    const exporter = await this.exporterService.findByUserId(req.user.id);
     
     return this.offerService.create({
       ...createDto,
-      exporterId: exporterId,
+      exporterId: exporter.id,
     });
   }
 
   @Get('my-offers')
   async getMyOffers(@Request() req, @Query('status') status?: string) {
-    const exporterId = req.user.exporterId;
-    if (!exporterId) {
-      throw new BadRequestException('User is not associated with an exporter');
-    }
-    return this.offerService.getExporterOffers(exporterId, status);
+    // Get the actual exporter entity for this user
+    const exporter = await this.exporterService.findByUserId(req.user.id);
+    return this.offerService.getExporterOffers(exporter.id, status);
   }
 
   @Get(':id')
@@ -40,29 +43,23 @@ export class OfferController {
 
   @Put(':id')
   async updateOffer(@Param('id') id: string, @Body() updateDto: UpdateOfferDto, @Request() req) {
-    const exporterId = req.user.exporterId;
-    if (!exporterId) {
-      throw new BadRequestException('User is not associated with an exporter');
-    }
-    return this.offerService.update(id, updateDto, exporterId);
+    // Get the actual exporter entity for this user
+    const exporter = await this.exporterService.findByUserId(req.user.id);
+    return this.offerService.update(id, updateDto, exporter.id);
   }
 
   @Delete(':id')
   async removeOffer(@Param('id') id: string, @Request() req) {
-    const exporterId = req.user.exporterId;
-    if (!exporterId) {
-      throw new BadRequestException('User is not associated with an exporter');
-    }
-    return this.offerService.remove(id, exporterId);
+    // Get the actual exporter entity for this user
+    const exporter = await this.exporterService.findByUserId(req.user.id);
+    return this.offerService.remove(id, exporter.id);
   }
 
   @Post(':id/withdraw')
   async withdrawOffer(@Param('id') id: string, @Body() withdrawDto: { reason?: string }, @Request() req) {
-    const exporterId = req.user.exporterId;
-    if (!exporterId) {
-      throw new BadRequestException('User is not associated with an exporter');
-    }
-    return this.offerService.withdraw(id, exporterId, withdrawDto.reason);
+    // Get the actual exporter entity for this user
+    const exporter = await this.exporterService.findByUserId(req.user.id);
+    return this.offerService.withdraw(id, exporter.id, withdrawDto.reason);
   }
 
   @Post(':id/counter-offer')
@@ -71,11 +68,9 @@ export class OfferController {
     @Body() counterOfferDto: any,
     @Request() req
   ) {
-    const exporterId = req.user.exporterId;
-    if (!exporterId) {
-      throw new BadRequestException('User is not associated with an exporter');
-    }
-    return this.offerService.createCounterOffer(id, counterOfferDto, exporterId);
+    // Get the actual exporter entity for this user
+    const exporter = await this.exporterService.findByUserId(req.user.id);
+    return this.offerService.createCounterOffer(id, counterOfferDto, exporter.id);
   }
 
   @Put(':id/accept-negotiation')
@@ -103,11 +98,9 @@ export class OfferController {
     @Body() uploadDto: { fileName: string; fileUrl: string; documentType: string },
     @Request() req
   ) {
-    const exporterId = req.user.exporterId;
-    if (!exporterId) {
-      throw new BadRequestException('User is not associated with an exporter');
-    }
-    return this.offerService.uploadDocument(id, uploadDto, exporterId);
+    // Get the actual exporter entity for this user
+    const exporter = await this.exporterService.findByUserId(req.user.id);
+    return this.offerService.uploadDocument(id, uploadDto, exporter.id);
   }
 
   @Get('sourcing-request/:requestId')
@@ -117,26 +110,30 @@ export class OfferController {
 
   @Patch(':id/withdraw')
   async withdrawOfferPatch(@Param('id') id: string, @Body() withdrawDto: { reason?: string }, @Request() req) {
-    const exporterId = req.user.exporterId;
-    if (!exporterId) {
-      throw new BadRequestException('User is not associated with an exporter');
-    }
-    return this.offerService.withdraw(id, exporterId, withdrawDto.reason);
+    // Get the actual exporter entity for this user
+    const exporter = await this.exporterService.findByUserId(req.user.id);
+    return this.offerService.withdraw(id, exporter.id, withdrawDto.reason);
   }
 
   @Patch(':id/accept')
   async acceptOfferPatch(@Param('id') id: string, @Request() req) {
-    return this.offerService.accept(id, req.user.globalBuyerId || req.user.id);
+    // Get the actual global buyer entity for this user
+    const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+    return this.offerService.accept(id, globalBuyer.id);
   }
 
   @Patch(':id/reject')
   async rejectOfferPatch(@Param('id') id: string, @Body() rejectDto: { reason?: string }, @Request() req) {
-    return this.offerService.reject(id, req.user.globalBuyerId || req.user.id, rejectDto.reason);
+    // Get the actual global buyer entity for this user
+    const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+    return this.offerService.reject(id, globalBuyer.id, rejectDto.reason);
   }
 
   @Post(':id/negotiate')
   async negotiateOfferPost(@Param('id') id: string, @Body() negotiationDto: any, @Request() req) {
-    return this.offerService.negotiate(id, req.user.globalBuyerId || req.user.id, negotiationDto);
+    // Get the actual global buyer entity for this user
+    const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+    return this.offerService.negotiate(id, globalBuyer.id, negotiationDto);
   }
 
   // DEBUG: Temporary endpoint to test database connections and relationships

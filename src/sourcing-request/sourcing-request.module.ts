@@ -12,7 +12,7 @@ import { SourcingRequestService } from './sourcing-request.service';
   imports: [
     TypeOrmModule.forFeature([SourcingRequest]),
     CommonModule,
-    GlobalBuyerModule,
+    forwardRef(() => GlobalBuyerModule),
   ],
   controllers: [SourcingRequestController],
   providers: [SourcingRequestService],

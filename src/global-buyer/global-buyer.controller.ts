@@ -178,6 +178,11 @@ export class GlobalBuyerController {
     return this.globalBuyerService.updatePaymentInfo(req.user.id, paymentInfo);
   }
 
+  @Get('dashboard/notifications')
+  async getDashboardNotifications(@Request() req) {
+    return this.globalBuyerService.getDashboardNotifications(req.user.id);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string): Promise<GlobalBuyer> {
     return this.globalBuyerService.findOne(id);

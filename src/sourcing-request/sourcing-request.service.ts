@@ -146,6 +146,7 @@ export class SourcingRequestService {
     const request = this.sourcingRequestRepository.create({
       ...createDto,
       status: RequestStatus.ACTIVE,
+      isPublic: createDto.isPublic !== false, // Default to true unless explicitly set to false
       createdAt: new Date(),
       updatedAt: new Date(),
     });

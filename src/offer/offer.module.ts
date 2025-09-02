@@ -7,14 +7,20 @@ import { OfferRepository } from './repositories/offer.repository';
 import { CommonModule } from '../common/common.module';
 import { ExporterModule } from '../exporter/exporter.module';
 import { SourcingRequestModule } from '../sourcing-request/sourcing-request.module';
+import { GlobalBuyerModule } from '../global-buyer/global-buyer.module';
+import { OrderModule } from '../order/order.module';
+import { ChatModule } from '../chat/chat.module';
 import { OfferService } from './offer.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Offer]),
     CommonModule,
-    ExporterModule,
+    forwardRef(() => ExporterModule),
     forwardRef(() => SourcingRequestModule),
+    forwardRef(() => GlobalBuyerModule),
+    forwardRef(() => OrderModule),
+    forwardRef(() => ChatModule),
   ],
   controllers: [OfferController],
   providers: [OfferService, OfferRepository],

@@ -13,6 +13,7 @@ import { ExporterModule } from './exporter/exporter.module';
 import { SourcingRequestModule } from './sourcing-request/sourcing-request.module';
 import { OfferModule } from './offer/offer.module';
 import { OrderModule } from './order/order.module';
+import { ChatModule } from './chat/chat.module';
 import { MarketTrendsModule } from './market-trends/market-trends.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { MailModule } from './mail/mail.module';
@@ -47,6 +48,7 @@ import { MailModule } from './mail/mail.module';
     SourcingRequestModule,
     OfferModule,
     OrderModule,
+    ChatModule,
     MarketTrendsModule,
     AdminModule,
     CommonModule,

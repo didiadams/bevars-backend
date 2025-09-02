@@ -1,7 +1,7 @@
 
 import { Injectable, NotFoundException, UnauthorizedException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Between, MoreThanOrEqual } from 'typeorm';
 import { GlobalBuyerRepository } from './repositories/global-buyer.repository';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateGlobalBuyerDto } from './dto/create-global-buyer.dto';
@@ -12,6 +12,8 @@ import { BuyerVerificationDocument } from './entities/buyer-verification-documen
 import { User } from '../user/entities/user.entity';
 import { v4 as uuidv4 } from 'uuid';
 import { Exporter } from '../exporter/entities/exporter.entity';
+import { SourcingRequest, RequestStatus } from '../sourcing-request/entities/sourcing-request.entity';
+import { Offer } from '../offer/entities/offer.entity';
 
 
 @Injectable()
@@ -135,6 +137,10 @@ export class GlobalBuyerService {
     private readonly verificationDocumentRepository: Repository<BuyerVerificationDocument>,
     @InjectRepository(Exporter)
     private readonly exporterRepository: Repository<Exporter>,
+    @InjectRepository(SourcingRequest)
+    private readonly sourcingRequestRepository: Repository<SourcingRequest>,
+    @InjectRepository(Offer)
+    private readonly offerRepository: Repository<Offer>,
   ) {}
 
   async create(createDto: CreateGlobalBuyerDto & { userId: string }): Promise<GlobalBuyer> {
@@ -348,6 +354,67 @@ export class GlobalBuyerService {
     globalBuyer.creditLimit = paymentInfo.creditLimit;
     
     return this.globalBuyerRepository.save(globalBuyer as any as GlobalBuyer);
+  }
+
+  async getDashboardNotifications(userId: string) {
+    const buyer = await this.findByUserId(userId);
+    
+    const notifications = [];
+
+    // Check for new offers on buyer's sourcing requests
+    const newOffers = await this.offerRepository.createQueryBuilder('offer')
+      .innerJoin('offer.sourcingRequest', 'request')
+      .where('request.globalBuyerId = :buyerId', { buyerId: buyer.id })
+      .andWhere('offer.status = :status', { status: 'pending' })
+      .andWhere('offer.createdAt >= :timeFrame', { 
+        timeFrame: new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
+      })
+      .getCount();
+
+    if (newOffers > 0) {
+      notifications.push({
+        id: 1,
+        type: "offer",
+        message: `${newOffers} new offer${newOffers > 1 ? 's' : ''} received`,
+        time: "30m ago",
+        urgent: true,
+      });
+    }
+
+    // Check for expiring sourcing requests
+    const expiringRequests = await this.sourcingRequestRepository.count({
+      where: {
+        globalBuyerId: buyer.id,
+        status: RequestStatus.ACTIVE,
+        quotationDeadline: Between(
+          new Date(),
+          new Date(Date.now() + 2 * 24 * 60 * 60 * 1000) // Next 2 days
+        )
+      }
+    });
+
+    if (expiringRequests > 0) {
+      notifications.push({
+        id: 2,
+        type: "request",
+        message: `${expiringRequests} request${expiringRequests > 1 ? 's' : ''} expiring soon`,
+        time: "1h ago",
+        urgent: false,
+      });
+    }
+
+    // Check verification status
+    if (buyer.status === 'not_started' || buyer.status === 'in_progress') {
+      notifications.push({
+        id: 3,
+        type: "verification",
+        message: "Complete your account verification to access premium features",
+        time: "2h ago",
+        urgent: false,
+      });
+    }
+
+    return notifications.slice(0, 5); // Return max 5 notifications
   }
 
   async getPlatformStats(): Promise<{ verifiedExporters: number; successfulMatchesPercent: number; tradeVolume: number; }>{
