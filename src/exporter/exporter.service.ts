@@ -547,27 +547,49 @@ export class ExporterService {
         quotationDeadline: MoreThanOrEqual(new Date()),
         isPublic: true
       },
-      relations: ['globalBuyer', 'globalBuyer.user'],
+      relations: ['globalBuyer', 'globalBuyer.user', 'offers'],
       order: { createdAt: 'DESC' },
       take: 5
     });
 
-    return requests.map(request => ({
-      id: request.id,
-      title: request.title,
-      buyer: request.globalBuyer.user?.firstName 
-        ? `${request.globalBuyer.user.firstName} ${request.globalBuyer.user.lastName}`
-        : request.globalBuyer.user?.companyName || 'Unknown Buyer',
-      budget: request.budgetMin && request.budgetMax 
-        ? `$${request.budgetMin.toLocaleString()} - $${request.budgetMax.toLocaleString()}`
-        : request.budgetMin 
-        ? `$${request.budgetMin.toLocaleString()}+`
-        : 'Budget not specified',
-      deadline: new Date(request.quotationDeadline).toLocaleDateString(),
-      urgency: request.urgencyLevel,
-      location: request.deliveryCountry,
-      description: request.description.substring(0, 100) + (request.description.length > 100 ? '...' : ''),
-    }));
+    // For each request, check if current exporter has submitted an offer
+    const requestsWithOfferInfo = await Promise.all(
+      requests.map(async (request) => {
+        // Count total offers for this request
+        const totalOffers = await this.offerRepository.count({
+          where: { sourcingRequestId: request.id }
+        });
+
+        // Check if current exporter has submitted an offer
+        const hasSubmittedOffer = await this.offerRepository.count({
+          where: { 
+            sourcingRequestId: request.id,
+            exporterId: exporter.id 
+          }
+        }) > 0;
+
+        return {
+          id: request.id,
+          title: request.title,
+          buyer: request.globalBuyer.user?.firstName 
+            ? `${request.globalBuyer.user.firstName} ${request.globalBuyer.user.lastName}`
+            : request.globalBuyer.user?.companyName || 'Unknown Buyer',
+          budget: request.budgetMin && request.budgetMax 
+            ? `$${request.budgetMin.toLocaleString()} - $${request.budgetMax.toLocaleString()}`
+            : request.budgetMin 
+            ? `$${request.budgetMin.toLocaleString()}+`
+            : 'Budget not specified',
+          deadline: new Date(request.quotationDeadline).toLocaleDateString(),
+          urgency: request.urgencyLevel,
+          location: request.deliveryCountry,
+          description: request.description.substring(0, 100) + (request.description.length > 100 ? '...' : ''),
+          hasSubmittedOffer,
+          totalOffers,
+        };
+      })
+    );
+
+    return requestsWithOfferInfo;
   }
 
   async getDashboardOffers(userId: string) {
@@ -708,6 +730,146 @@ export class ExporterService {
     }
 
     return notifications;
+  }
+
+  async getRequestOffers(requestId: string, userId: string) {
+    const exporter = await this.findByUserId(userId);
+    
+    // Get all offers for this request (limited view for competitive reasons)
+    const offers = await this.offerRepository.find({
+      where: { sourcingRequestId: requestId },
+      relations: ['exporter', 'exporter.user'],
+      order: { createdAt: 'DESC' }
+    });
+
+    return offers.map(offer => ({
+      id: offer.id,
+      exporterName: offer.exporter.user?.companyName || 
+                   `${offer.exporter.user?.firstName || ''} ${offer.exporter.user?.lastName || ''}`.trim() || 
+                   'Anonymous Exporter',
+      isVerified: offer.exporter.isVerified,
+      submittedAt: this.getTimeAgo(offer.createdAt),
+      status: offer.status,
+      // Don't show sensitive pricing info to competitors
+      isMyOffer: offer.exporterId === exporter.id,
+      ...(offer.exporterId === exporter.id && {
+        // Only show full details for exporter's own offer
+        totalPrice: offer.totalPrice,
+        pricePerUnit: offer.pricePerUnit,
+        currency: offer.currency,
+        leadTime: offer.leadTime,
+        validUntil: offer.validUntil,
+      })
+    }));
+  }
+
+  async getMyOfferForRequest(requestId: string, userId: string) {
+    const exporter = await this.findByUserId(userId);
+    
+    const offer = await this.offerRepository.findOne({
+      where: { 
+        sourcingRequestId: requestId,
+        exporterId: exporter.id 
+      },
+      relations: ['sourcingRequest', 'sourcingRequest.globalBuyer', 'sourcingRequest.globalBuyer.user']
+    });
+
+    if (!offer) {
+      // Return null instead of throwing an exception - this is an expected case
+      return null;
+    }
+
+    return {
+      id: offer.id,
+      requestTitle: offer.sourcingRequest.title,
+      buyerName: offer.sourcingRequest.globalBuyer.user?.companyName ||
+                 `${offer.sourcingRequest.globalBuyer.user?.firstName || ''} ${offer.sourcingRequest.globalBuyer.user?.lastName || ''}`.trim() ||
+                 'Unknown Buyer',
+      totalPrice: offer.totalPrice,
+      pricePerUnit: offer.pricePerUnit,
+      currency: offer.currency,
+      availableQuantity: offer.availableQuantity,
+      leadTime: offer.leadTime,
+      validUntil: offer.validUntil,
+      status: offer.status,
+      submittedAt: offer.createdAt,
+      productSpecifications: offer.productSpecifications,
+      qualityAssurance: offer.qualityAssurance,
+      packagingDetails: offer.packagingDetails,
+      paymentTerms: offer.paymentTerms,
+      additionalNotes: offer.additionalNotes,
+    };
+  }
+
+  async getOfferById(offerId: string, userId: string) {
+    const exporter = await this.findByUserId(userId);
+    
+    const offer = await this.offerRepository.findOne({
+      where: { 
+        id: offerId,
+        exporterId: exporter.id 
+      },
+      relations: [
+        'sourcingRequest', 
+        'sourcingRequest.globalBuyer', 
+        'sourcingRequest.globalBuyer.user'
+      ]
+    });
+
+    if (!offer) {
+      throw new NotFoundException('Offer not found or you do not have permission to view it');
+    }
+
+    const request = offer.sourcingRequest;
+    const buyer = request.globalBuyer;
+    const buyerUser = buyer.user;
+
+    return {
+      id: offer.id,
+      requestId: request.id,
+      requestTitle: request.title,
+      buyer: {
+        name: buyerUser ? `${buyerUser.firstName || ''} ${buyerUser.lastName || ''}`.trim() : 'Unknown Contact',
+        company: buyerUser?.companyName || 'Unknown Company',
+        location: request.deliveryCountry || 'Unknown Location'
+      },
+      product: {
+        name: request.productName || 'Product',
+        category: request.productCategory || 'Unknown Category',
+        specifications: offer.productSpecifications || 'No specifications provided'
+      },
+      pricing: {
+        unitPrice: Number(offer.pricePerUnit),
+        totalPrice: Number(offer.totalPrice),
+        currency: offer.currency || 'USD'
+      },
+      quantity: {
+        requested: Number(request.quantity),
+        offered: Number(offer.availableQuantity),
+        unit: request.unit || 'units'
+      },
+      delivery: {
+        method: offer.shippingDetails || 'Standard Shipping',
+        timeframe: offer.leadTime ? `${offer.leadTime} days` : 'Not specified',
+        location: `${request.deliveryCity || ''} ${request.deliveryCountry || ''}`.trim() || 'To be determined',
+        terms: offer.shippingDetails || 'Standard terms apply'
+      },
+      payment: {
+        terms: offer.paymentTerms || 'Net 30',
+        method: 'Bank Transfer' // Default, could be enhanced
+      },
+      status: offer.status,
+      submittedAt: offer.createdAt ? new Date(offer.createdAt).toLocaleDateString() : 'Unknown date',
+      validUntil: offer.validUntil ? new Date(offer.validUntil).toLocaleDateString() : 'No expiry set',
+      notes: offer.additionalNotes || '',
+      // Optional: Add attachments if you have that functionality
+      attachments: offer.attachments ? offer.attachments.map((url, index) => ({
+        id: `${offer.id}-${index}`,
+        name: `Attachment ${index + 1}`,
+        url: url,
+        type: 'file'
+      })) : []
+    };
   }
 
   // Helper method to calculate time ago

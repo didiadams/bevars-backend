@@ -11,6 +11,12 @@ export class CreateOfferDto {
   @Transform(({ value }) => parseFloat(value))
   pricePerUnit: number;
 
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Transform(({ value }) => parseFloat(value))
+  totalPrice?: number;
+
   @IsString()
   currency: string;
 

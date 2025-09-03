@@ -143,6 +143,21 @@ export class ExporterController {
     return this.exporterService.getDashboardNotifications(req.user.id);
   }
 
+  @Get('request/:requestId/offers')
+  async getRequestOffers(@Param('requestId') requestId: string, @Request() req) {
+    return this.exporterService.getRequestOffers(requestId, req.user.id);
+  }
+
+  @Get('request/:requestId/my-offer')
+  async getMyOfferForRequest(@Param('requestId') requestId: string, @Request() req) {
+    return this.exporterService.getMyOfferForRequest(requestId, req.user.id);
+  }
+
+  @Get('offer/:offerId')
+  async getOfferById(@Param('offerId') offerId: string, @Request() req) {
+    return this.exporterService.getOfferById(offerId, req.user.id);
+  }
+
   @Get()
   async findAllExporters(
     @Query('page') page: number = 1,

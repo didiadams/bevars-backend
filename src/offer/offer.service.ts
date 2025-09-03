@@ -31,7 +31,7 @@ export class OfferService {
     const offer = this.offerRepository.create({
       ...createDto,
       status: OfferStatus.PENDING,
-      totalPrice: createDto.pricePerUnit * createDto.availableQuantity,
+      totalPrice: createDto.totalPrice || (createDto.pricePerUnit * createDto.availableQuantity),
     });
 
     const savedOffer = await this.offerRepository.save(offer) as any as Offer;
