@@ -64,8 +64,8 @@ export class User {
   @Column({ type: 'enum', enum: UserStatus, default: UserStatus.ACTIVE })
   status: UserStatus;
 
-  @Column({ default: false })
-  tokenVersion: number;
+@Column({ type: 'integer', default: 0 }) 
+tokenVersion: number;                    
 
   @OneToOne(() => GlobalBuyer, (globalBuyer) => globalBuyer.user)
   globalBuyer: GlobalBuyer;
