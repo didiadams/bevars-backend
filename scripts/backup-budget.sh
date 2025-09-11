@@ -8,7 +8,7 @@ echo "📦 Creating backup for Bevars Exporters..."
 
 # Database backup
 echo "🗄️ Backing up database..."
-pg_dump -h localhost -U bevars_user -d bevars_exporters > "$BACKUP_DIR/db_backup_$DATE.sql"
+pg_dump -h localhost -U bevars_user -d source_db > "$BACKUP_DIR/db_backup_$DATE.sql"
 
 # Compress database backup
 gzip "$BACKUP_DIR/db_backup_$DATE.sql"

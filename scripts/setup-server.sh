@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Bevars Exporters - Quick Setup Script for Digital Ocean
+# Bevars  - Quick Setup Script for Digital Ocean
 # This script automates most of the server setup process
 
 set -e
 
-echo "🚀 Bevars Exporters - Quick Server Setup"
+echo "🚀 Bevars  - Quick Server Setup"
 echo "======================================="
 
 # Check if running as root
