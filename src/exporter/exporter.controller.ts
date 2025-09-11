@@ -158,6 +158,11 @@ export class ExporterController {
     return this.exporterService.getOfferById(offerId, req.user.id);
   }
 
+  @Get('stats/total')
+  async getTotalExportersCount() {
+    return this.exporterService.getTotalExportersCount();
+  }
+
   @Get()
   async findAllExporters(
     @Query('page') page: number = 1,

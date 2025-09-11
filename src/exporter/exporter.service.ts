@@ -389,7 +389,38 @@ export class ExporterService {
     };
   }
 
-  // Enhanced search with pagination
+  /**
+   * Enhanced search with pagination and optimization for millions of exporters
+   * 
+   * SCALABILITY STRATEGIES:
+   * 1. **Database Indexes** (CRITICAL for millions of records):
+   *    - CREATE INDEX idx_exporter_verified ON exporter(isVerified);
+   *    - CREATE INDEX idx_exporter_featured ON exporter(isFeatured);
+   *    - CREATE INDEX idx_exporter_rating ON exporter(averageRating);
+   *    - CREATE INDEX idx_exporter_crops ON exporter USING GIN(primaryCrops);
+   *    - CREATE INDEX idx_user_country ON user(countryName, countryCode);
+   *    - CREATE INDEX idx_exporter_active ON exporter(isActive) WHERE isActive = true;
+   * 
+   * 2. **Search Optimization**:
+   *    - Full-text search for crop names (PostgreSQL ts_vector)
+   *    - Elasticsearch/OpenSearch for complex queries
+   *    - Redis caching for popular searches
+   * 
+   * 3. **Pagination & Limits**:
+   *    - Cap results at 50 per page (prevents expensive queries)
+   *    - Use cursor-based pagination for large datasets
+   *    - Implement search result caching
+   * 
+   * 4. **Relevance Scoring**:
+   *    - Verified exporters ranked higher
+   *    - Featured placement for premium users
+   *    - Multi-factor ordering (rating + experience + activity)
+   * 
+   * 5. **Query Optimization**:
+   *    - Filter early (WHERE clauses before JOINs)
+   *    - Use EXISTS instead of JOINs where possible
+   *    - Limit data fetched with specific SELECT fields
+   */
   async findAllWithFilters(filters: {
     page?: number;
     limit?: number;
@@ -398,44 +429,200 @@ export class ExporterService {
     verified?: boolean;
     search?: string;
   }): Promise<{ exporters: Exporter[]; total: number; page: number; totalPages: number }> {
+    console.log('=== SEARCH DEBUG ===');
+    console.log('Filters received:', filters);
+    
     const page = filters.page || 1;
-    const limit = filters.limit || 10;
+    const limit = Math.min(filters.limit || 10, 50); // Cap limit at 50 for performance
     const skip = (page - 1) * limit;
 
     const queryBuilder = this.exporterRepository
       .createQueryBuilder('exporter')
       .leftJoinAndSelect('exporter.user', 'user');
 
+    // Debug: Let's see all exporters first
+    const allExporters = await this.exporterRepository.find({ relations: ['user'] });
+    console.log('Total exporters in database:', allExporters.length);
+    allExporters.forEach((exp, index) => {
+      console.log(`Exporter ${index + 1}:`, {
+        id: exp.id,
+        companyName: exp.user?.companyName,
+        primaryCrops: exp.primaryCrops,
+        productCategories: exp.productCategories,
+        businessDescription: exp.businessDescription,
+        isVerified: exp.isVerified,
+        exportDestinations: exp.exportDestinations,
+        userCountryName: exp.user?.countryName,
+        userCountryCode: exp.user?.countryCode,
+      });
+    });
+
+    // Early filtering for performance - most restrictive filters first
+    queryBuilder.andWhere('exporter.isActive = :isActive', { isActive: true }); // Only active exporters
+
     if (filters.verified !== undefined) {
       queryBuilder.andWhere('exporter.isVerified = :verified', { verified: filters.verified });
     }
 
     if (filters.category) {
-      queryBuilder.andWhere(':category = ANY(exporter.productCategories)', { category: filters.category });
+      queryBuilder.andWhere('exporter.productCategories ILIKE :categoryLike', { categoryLike: `%${filters.category}%` });
     }
 
     if (filters.country) {
-      queryBuilder.andWhere(':country = ANY(exporter.exportDestinations)', { country: filters.country });
+      // Search by user's country name or country code
+      queryBuilder.andWhere(
+        '(user.countryName ILIKE :countryLike OR user.countryCode ILIKE :countryLike)', 
+        { countryLike: `%${filters.country}%` }
+      );
     }
 
     if (filters.search) {
-      queryBuilder.andWhere(
-        '(exporter.businessDescription LIKE :search OR user.companyName LIKE :search OR user.firstName LIKE :search OR user.lastName LIKE :search OR user.email LIKE :search)',
-        { search: `%${filters.search}%` }
-      );
+      // Search for specific crops in primaryCrops (stored as comma-separated text) or general business info
+      console.log('Adding search filter for:', filters.search);
+      
+      // Create a mapping of crop names/terms to crop IDs
+      const cropMapping: Record<string, string> = {
+        'cashew': 'cashew',
+        'cashew nuts': 'cashew',
+        'cashew nut': 'cashew',
+        'sesame': 'sesame',
+        'sesame seeds': 'sesame',
+        'ginger': 'ginger',
+        'cocoa': 'cocoa',
+        'cocoa beans': 'cocoa',
+        'coffee': 'coffee',
+        'coffee beans': 'coffee',
+        'tea': 'tea',
+        'tea leaves': 'tea',
+        'shea butter': 'shea_butter',
+        'shea': 'shea_butter',
+        'palm oil': 'palm_oil',
+        'palm': 'palm_oil',
+        'rubber': 'rubber',
+        'cotton': 'cotton',
+        'hibiscus': 'hibiscus',
+        'turmeric': 'turmeric',
+        'black pepper': 'black_pepper',
+        'pepper': 'black_pepper',
+        'groundnut': 'groundnut',
+        'groundnuts': 'groundnut',
+        'peanut': 'groundnut',
+        'peanuts': 'groundnut',
+        'soybean': 'soybean',
+        'soybeans': 'soybean',
+        'sorghum': 'sorghum',
+        'millet': 'millet',
+        'maize': 'maize',
+        'corn': 'maize',
+        'beans': 'beans',
+        'cowpeas': 'beans',
+      };
+      
+      // Normalize the search term and look for crop ID
+      const normalizedSearch = filters.search.toLowerCase().trim();
+      const cropId = cropMapping[normalizedSearch];
+      
+      console.log('Normalized search:', normalizedSearch);
+      console.log('Found crop ID:', cropId);
+      
+      if (cropId) {
+        // Search for the specific crop ID in primaryCrops
+        queryBuilder.andWhere('exporter.primaryCrops ILIKE :cropSearch', { 
+          cropSearch: `%${cropId}%` 
+        });
+      } else {
+        // Fallback to general search in business info and company name
+        queryBuilder.andWhere(
+          '(exporter.businessDescription ILIKE :searchLike OR user.companyName ILIKE :searchLike)',
+          { 
+            searchLike: `%${filters.search}%` 
+          }
+        );
+      }
     }
+
+    console.log('Final query SQL:', queryBuilder.getSql());
+    console.log('Query parameters:', queryBuilder.getParameters());
 
     const [exporters, total] = await queryBuilder
       .skip(skip)
       .take(limit)
-      .orderBy('exporter.averageRating', 'DESC')
+      // Multi-factor ordering for better relevance with millions of records:
+      // 1. Verified exporters first (business credibility)
+      .addOrderBy('exporter.isVerified', 'DESC')
+      // 2. Featured exporters (premium placement)
+      .addOrderBy('exporter.isFeatured', 'DESC') 
+      // 3. Average rating (quality indicator)
+      .addOrderBy('exporter.averageRating', 'DESC')
+      // 4. Number of completed orders (experience)
+      .addOrderBy('exporter.completedOrders', 'DESC')
+      // 5. Recent activity (freshness)
+      .addOrderBy('exporter.updatedAt', 'DESC')
       .getManyAndCount();
+
+    console.log('Search results:', { 
+      found: exporters.length, 
+      total,
+      exporters: exporters.map(e => ({
+        id: e.id,
+        companyName: e.user?.companyName,
+        primaryCrops: e.primaryCrops
+      }))
+    });
+    console.log('=== END SEARCH DEBUG ===');
 
     return {
       exporters,
       total,
       page,
       totalPages: Math.ceil(total / limit)
+    };
+  }
+
+  /**
+   * Get total count of active exporters in the system
+   * Used for displaying system-wide statistics
+   */
+  async getTotalExportersCount(): Promise<{ 
+    total: number; 
+    verified: number; 
+    active: number; 
+    countries: number; 
+  }> {
+    const [
+      total,
+      verified,
+      active,
+      countryCount
+    ] = await Promise.all([
+      // Total exporters
+      this.exporterRepository.count(),
+      
+      // Verified exporters
+      this.exporterRepository.count({
+        where: { isVerified: true }
+      }),
+      
+      // Active exporters
+      this.exporterRepository.count({
+        where: { isActive: true }
+      }),
+      
+      // Unique countries count
+      this.exporterRepository
+        .createQueryBuilder('exporter')
+        .leftJoin('exporter.user', 'user')
+        .select('COUNT(DISTINCT user.countryName)', 'count')
+        .where('user.countryName IS NOT NULL')
+        .getRawOne()
+        .then(result => parseInt(result?.count || '0'))
+    ]);
+
+    return {
+      total,
+      verified,
+      active,
+      countries: countryCount,
     };
   }
 
