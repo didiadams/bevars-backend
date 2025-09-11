@@ -4,7 +4,7 @@ module.exports = {
     {
       name: 'bevars-backend',
       cwd: '/home/bevars/bevars-exports/backend',
-      script: 'dist/main.js',
+      script: 'dist/src/main.js',
       instances: 1,
       exec_mode: 'fork',
       env: {
