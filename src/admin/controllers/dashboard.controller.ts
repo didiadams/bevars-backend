@@ -1,17 +1,36 @@
 import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { AdminGuard } from '../guards/admin.guard';
+import { AdminUserService } from '../services/admin-user.service';
+import { AdminAuditService } from '../services/admin-audit.service';
 import { SourcingRequestService } from '../../sourcing-request/sourcing-request.service';
 import { OfferService } from '../../offer/offer.service';
 
 @Controller('dashboard')
-@UseGuards(JwtAuthGuard)
 export class DashboardController {
   constructor(
     private readonly sourcingRequestService: SourcingRequestService,
     private readonly offerService: OfferService,
+    private readonly adminUserService: AdminUserService,
+    private readonly adminAuditService: AdminAuditService,
   ) {}
 
+  // ADMIN ROUTES
+  @Get('admin/stats')
+  @UseGuards(AdminGuard)
+  async getAdminDashboardStats() {
+    return this.adminUserService.getDashboardStats();
+  }
+
+  @Get('admin/activities')
+  @UseGuards(AdminGuard)
+  async getAdminRecentActivities() {
+    return this.adminAuditService.getAdminActivityLogs(1, 10);
+  }
+
+  // EXISTING USER ROUTES
   @Get('global-buyer/analytics')
+  @UseGuards(JwtAuthGuard)
   async getGlobalBuyerAnalytics(@Request() req) {
     const userId = req.user.globalBuyerId || req.user.id;
     
@@ -45,6 +64,7 @@ export class DashboardController {
   }
 
   @Get('exporter/analytics')
+  @UseGuards(JwtAuthGuard)
   async getExporterAnalytics(@Request() req) {
     const userId = req.user.exporterId || req.user.id;
     
@@ -71,6 +91,7 @@ export class DashboardController {
   }
 
   @Get('sourcing-requests')
+  @UseGuards(JwtAuthGuard)
   async getDashboardSourcingRequests(
     @Request() req,
     @Query('page') page: number = 1,
@@ -104,6 +125,7 @@ export class DashboardController {
   }
 
   @Get('offers')
+  @UseGuards(JwtAuthGuard)
   async getDashboardOffers(
     @Request() req,
     @Query('page') page: number = 1,
@@ -140,6 +162,7 @@ export class DashboardController {
   }
 
   @Get('market-insights')
+  @UseGuards(JwtAuthGuard)
   async getMarketInsights() {
     // Get featured sourcing requests as market insights
     const featuredRequests = await this.sourcingRequestService.getFeatured();
@@ -166,6 +189,7 @@ export class DashboardController {
   }
 
   @Get('notifications')
+  @UseGuards(JwtAuthGuard)
   async getNotifications(@Request() req) {
     // Mock notifications for now - in a real app, you'd have a notifications service
     const notifications = [
@@ -194,6 +218,7 @@ export class DashboardController {
   }
 
   @Get('profile-completion')
+  @UseGuards(JwtAuthGuard)
   async getProfileCompletion(@Request() req) {
     // Calculate profile completion percentage
     const user = req.user;
