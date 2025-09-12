@@ -35,14 +35,56 @@ const dbConfig = getDatabaseUrl();
 const config = {
   type: 'postgres',
   ...dbConfig,
-  entities: [path.join(__dirname, '../**/*.entity.{ts,js}')],
-  migrations: [path.join(__dirname, '../migrations', '*.{ts,js}')],
+  entities: isDevelopment 
+    ? [path.join(__dirname, '../**/*.entity.ts')]
+    : [path.join(__dirname, '../**/*.entity.js')],
+  migrations: isDevelopment
+    ? [path.join(__dirname, '../migrations/*.ts')]
+    : [path.join(__dirname, '../migrations/*.js')],
   synchronize: useMigrations ? false : isDevelopment,
   migrationsRun: useMigrations && !isDevelopment,
   autoLoadEntities: true,
   ssl: process.env.DATABASE_URL ? {
     rejectUnauthorized: false
   } : false,
+  
+  // 🚀 CONNECTION POOLING: Instead of creating new DB connection for each request,
+  // we maintain a pool of reusable connections. This dramatically improves performance
+  // under high load by avoiding connection overhead.
+  poolSize: process.env.NODE_ENV === 'production' ? 20 : 10, // Total connections in pool
+  
+  // ⏱️ QUERY TIMEOUT: Prevents runaway queries from consuming resources indefinitely.
+  // Any query taking longer than 5 seconds gets terminated automatically.
+  maxQueryExecutionTime: 5000, // 5 seconds
+  
+  extra: {
+    // 🔧 ADVANCED CONNECTION POOL SETTINGS
+    max: process.env.NODE_ENV === 'production' ? 20 : 10, // Maximum concurrent connections
+    min: 2, // Always keep 2 connections alive (prevents cold start delays)
+    
+    // ⏰ CONNECTION LIFECYCLE MANAGEMENT
+    acquire: 60000, // Max 60s to get connection from pool (prevents indefinite waiting)
+    idle: 10000, // Close idle connections after 10s (frees up resources)
+    evict: 1000, // Check for idle connections every 1s (resource cleanup frequency)
+    
+    // 🚫 TIMEOUT PROTECTION: Prevents database from hanging indefinitely
+    statement_timeout: 30000, // PostgreSQL: Kill queries after 30s
+    query_timeout: 30000, // Driver level: Kill queries after 30s
+    connectionTimeoutMillis: 10000, // Max 10s to establish initial connection
+    idleTimeoutMillis: 30000, // Close connection if idle for 30s
+    
+    // 🏷️ CONNECTION IDENTIFICATION: Helps identify connections in PostgreSQL logs
+    application_name: 'bevars-exporters', // Shows up in pg_stat_activity
+    
+    // 🔄 TCP KEEP-ALIVE: Detects dead connections and prevents connection drops
+    keepAlive: true, // Enable TCP keep-alive packets
+    keepAliveInitialDelayMillis: 10000, // Start keep-alive after 10s of inactivity
+  },
+  
+  // 📊 PERFORMANCE MONITORING: Track slow queries and errors for optimization
+  logging: isDevelopment ? 'all' : ['error', 'warn'], // Log everything in dev, errors in prod
+  logger: 'advanced-console', // Colored, formatted console output
+  // maxQueryExecutionTime logs queries slower than 5s for performance analysis
 };
 
 export default registerAs('typeorm', () => config);

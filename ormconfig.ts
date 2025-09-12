@@ -29,11 +29,32 @@ const getDatabaseUrl = () => {
 
 const dbConfig = getDatabaseUrl();
 
+// 🔧 PRODUCTION-SAFE PATH RESOLUTION
+const getEntityPath = () => {
+  if (isDevelopment) {
+    // Development: Use TypeScript files from src/
+    return [path.join(__dirname, 'src/**/*.entity.ts')];
+  } else {
+    // Production: Use compiled JavaScript files from dist/
+    return [path.join(__dirname, 'dist/**/*.entity.js')];
+  }
+};
+
+const getMigrationPath = () => {
+  if (isDevelopment) {
+    // Development: Use TypeScript files from src/migrations/
+    return [path.join(__dirname, 'src/migrations/*.ts')];
+  } else {
+    // Production: Use compiled JavaScript files from dist/migrations/
+    return [path.join(__dirname, 'dist/migrations/*.js')];
+  }
+};
+
 export const AppDataSource = new DataSource({
   type: 'postgres',
   ...dbConfig,
-  entities: [path.join(__dirname, 'src/**/*.entity.{ts,js}')],
-  migrations: [path.join(__dirname, 'src/migrations/*.{ts,js}')],
+  entities: getEntityPath(),
+  migrations: getMigrationPath(),
   synchronize: false, // Set to false when using migrations
   logging: isDevelopment,
   ssl: process.env.DATABASE_URL ? {

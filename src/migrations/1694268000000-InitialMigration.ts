@@ -4,10 +4,19 @@ export class InitialMigration1694268000000 implements MigrationInterface {
     name = 'InitialMigration1694268000000'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
-        // Create User table
+        // Create User table enums (if they don't exist)
         await queryRunner.query(`
-            CREATE TYPE "user_role_enum" AS ENUM('global_buyer', 'exporter', 'admin');
-            CREATE TYPE "user_status_enum" AS ENUM('active', 'inactive', 'suspended');
+            DO $$ BEGIN
+                CREATE TYPE "user_role_enum" AS ENUM('global_buyer', 'exporter', 'admin');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
+            
+            DO $$ BEGIN
+                CREATE TYPE "user_status_enum" AS ENUM('active', 'inactive', 'suspended');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
         `);
 
         await queryRunner.query(`
@@ -33,11 +42,25 @@ export class InitialMigration1694268000000 implements MigrationInterface {
             )
         `);
 
-        // Create Global Buyer table
+        // Create Global Buyer table enums (if they don't exist)
         await queryRunner.query(`
-            CREATE TYPE "verification_tier_enum" AS ENUM('standard', 'premium', 'enterprise');
-            CREATE TYPE "buyer_type_enum" AS ENUM('manufacturer', 'distributor', 'retailer', 'wholesaler', 'other');
-            CREATE TYPE "preferred_payment_method_enum" AS ENUM('bank_transfer', 'letter_of_credit', 'escrow', 'trade_finance', 'other');
+            DO $$ BEGIN
+                CREATE TYPE "verification_tier_enum" AS ENUM('standard', 'premium', 'enterprise');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
+            
+            DO $$ BEGIN
+                CREATE TYPE "buyer_type_enum" AS ENUM('manufacturer', 'distributor', 'retailer', 'wholesaler', 'other');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
+            
+            DO $$ BEGIN
+                CREATE TYPE "preferred_payment_method_enum" AS ENUM('bank_transfer', 'letter_of_credit', 'escrow', 'trade_finance', 'other');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
         `);
 
         await queryRunner.query(`
@@ -75,9 +98,13 @@ export class InitialMigration1694268000000 implements MigrationInterface {
             )
         `);
 
-        // Create Exporter table
+        // Create Exporter table enums (if they don't exist)
         await queryRunner.query(`
-            CREATE TYPE "verification_status_enum" AS ENUM('pending', 'approved', 'rejected');
+            DO $$ BEGIN
+                CREATE TYPE "verification_status_enum" AS ENUM('pending', 'approved', 'rejected');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
         `);
 
         await queryRunner.query(`
