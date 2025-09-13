@@ -40,6 +40,7 @@ app.enableCors({
     const allowedOrigins = [
       'https://farm-frontend-rosy.vercel.app',
       'http://localhost:8080',
+      'http://localhost:3000',
       'https://www.bevars.com',
       'https://bevars.com',
     ];
@@ -71,6 +72,6 @@ app.enableCors({
   app.setGlobalPrefix('api/v1');
   app.useGlobalFilters(new AllExceptionsFilter());
   console.log(process.env.BACKEND_PORT, 'port');
-  await app.listen(process.env.PORT ?? 80);
+  await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();
