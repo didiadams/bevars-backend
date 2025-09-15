@@ -58,7 +58,7 @@ export class User {
   @Column({ default: false })
   isVerified: boolean;
 
-  @Column({ default: true })
+  @Column({ default: false })
   isActive: boolean;
 
   @Column({ type: 'enum', enum: UserStatus, default: UserStatus.ACTIVE })

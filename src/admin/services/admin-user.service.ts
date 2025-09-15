@@ -397,7 +397,7 @@ export class AdminUserService {
       // Add additional metadata for admin use
       metadata: {
         totalDocuments: user.globalBuyer?.verificationDocuments?.length || 0,
-        pendingDocuments: user.globalBuyer?.verificationDocuments?.filter(doc => doc.status === 'uploaded')?.length || 0,
+  pendingDocuments: user.globalBuyer?.verificationDocuments?.filter(doc => doc.status === VerificationStatus.PENDING)?.length || 0,
         hasVerificationDocuments: user.exporter?.verificationDocuments !== null,
         lastActivity: user.updatedAt,
       }
@@ -433,7 +433,7 @@ export class AdminUserService {
       this.exporterRepository.count({ where: { isVerified: true } }),
       this.globalBuyerRepository.count({ where: { verificationTier: VerificationTier.PREMIUM } }),
       this.exporterRepository.count({ where: { verificationStatus: VerificationStatus.PENDING } }),
-      this.verificationDocRepository.count({ where: { status: 'uploaded' } }),
+  this.verificationDocRepository.count({ where: { status: VerificationStatus.PENDING } }),
       this.userRepository.count({ where: { isActive: true } }),
       this.userRepository.count({ where: { status: UserStatus.SUSPENDED } })
     ]);
@@ -457,46 +457,76 @@ export class AdminUserService {
   }
 
   // Get verification documents
-  async getVerificationDocuments(page: number = 1, limit: number = 20, status?: string) {
-    const skip = (page - 1) * limit;
-    
-    const queryBuilder = this.verificationDocRepository.createQueryBuilder('doc')
-      .leftJoinAndSelect('doc.buyer', 'buyer')
-      .leftJoinAndSelect('buyer.user', 'user')
-      .select([
-        'doc.id',
-        'doc.documentType',
-        'doc.fileUrl',
-        'doc.status',
-        'doc.uploadedAt',
-        'buyer.id',
-        'buyer.businessDescription',
-        'user.id',
-        'user.email',
-        'user.firstName',
-        'user.lastName',
-        'user.companyName'
-      ])
-      .skip(skip)
-      .take(limit)
-      .orderBy('doc.uploadedAt', 'DESC');
+// admin-user.service.ts
+async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus | string) {
+  const qbBuyer = this.globalBuyerRepository.createQueryBuilder('buyer')
+    .leftJoinAndSelect('buyer.user', 'user')
+    .leftJoinAndSelect('buyer.verificationDocuments', 'documents')
+    .skip((page - 1) * limit)
+    .take(limit);
 
-    if (status) {
-      queryBuilder.andWhere('doc.status = :status', { status });
-    }
-
-    const [documents, total] = await queryBuilder.getManyAndCount();
-
-    return {
-      documents,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+  if (status) {
+    const statuses = Array.isArray(status) ? status : status.split(',');
+    qbBuyer.andWhere('documents.status IN (:...statuses)', { statuses });
   }
+
+  const [buyers, buyersCount] = await qbBuyer.getManyAndCount();
+
+  const qbExporter = this.exporterRepository.createQueryBuilder('exporter')
+    .leftJoinAndSelect('exporter.user', 'user')
+    .skip((page - 1) * limit)
+    .take(limit);
+
+  if (status) {
+    const statuses = Array.isArray(status) ? status : status.split(',');
+    qbExporter.andWhere('exporter.verificationStatus IN (:...statuses)', { statuses });
+  }
+
+  const [exporters, exportersCount] = await qbExporter.getManyAndCount();
+
+  // Normalize Buyer docs
+  const buyerResults = buyers.map((buyer) => ({
+    id: buyer.id,
+    type: 'buyer' as const,
+    user: buyer.user,
+    documents: buyer.verificationDocuments.map((doc) => ({
+      documentType: doc.documentType,
+      fileUrl: doc.fileUrl,
+      status: doc.status,
+      uploadedAt: doc.uploadedAt,
+    })),
+    status: buyer.status, // global buyer status
+    uploadedAt: buyer.createdAt,
+    entityId: buyer.id,
+  }));
+
+  // Normalize Exporter docs
+  const exporterResults = exporters.map((exporter) => ({
+    id: exporter.id,
+    type: 'exporter' as const,
+    user: exporter.user,
+    documents: Object.entries(exporter.verificationDocuments || {}).map(
+      ([documentType, fileUrl]) => ({
+        documentType,
+        fileUrl,
+        status: exporter.verificationStatus,
+        uploadedAt: exporter.createdAt,
+      }),
+    ),
+    status: exporter.verificationStatus,
+    uploadedAt: exporter.createdAt,
+    entityId: exporter.id,
+  }));
+
+  return {
+    data: [...buyerResults, ...exporterResults],
+    pagination: {
+      page,
+      limit,
+      total: buyersCount + exportersCount,
+    },
+  };
+}
 
   // Get all pending documents (both buyer and exporter)
   async getAllPendingDocuments(page: number = 1, limit: number = 20) {
@@ -524,7 +554,7 @@ export class AdminUserService {
         'user.lastName',
         'user.companyName'
       ])
-      .where('doc.status IN (:...statuses)', { statuses: ['uploaded', 'pending', 'submitted'] })
+  .where('doc.status IN (:...statuses)', { statuses: [VerificationStatus.PENDING, VerificationStatus.UNDER_REVIEW] })
       .orderBy('doc.uploadedAt', 'DESC');
 
     const [buyerDocs, buyerTotal] = await buyerDocsQuery.getManyAndCount();
@@ -642,9 +672,9 @@ export class AdminUserService {
       throw new NotFoundException('Document not found');
     }
 
-    if (status === 'approved') {
-      // Update document status
-      await this.verificationDocRepository.update(documentId, { status: 'approved' });
+  if (status === 'approved') {
+  // Update document status
+  await this.verificationDocRepository.update(documentId, { status: VerificationStatus.APPROVED });
       
       // Check if all documents are approved for this buyer
       const allBuyerDocs = await this.verificationDocRepository.find({
@@ -660,7 +690,7 @@ export class AdminUserService {
           status: 'approved'
         });
       }
-    } else {
+      } else {
       // Delete the document when rejected so user can upload again
       await this.verificationDocRepository.delete(documentId);
       
@@ -1053,4 +1083,6 @@ export class AdminUserService {
   private async logAdminAction(adminId: string, action: string) {
     await this.auditService.logAdminAction(adminId, action);
   }
+
+  
 }

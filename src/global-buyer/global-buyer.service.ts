@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Exporter } from '../exporter/entities/exporter.entity';
 import { SourcingRequest, RequestStatus } from '../sourcing-request/entities/sourcing-request.entity';
 import { Offer } from '../offer/entities/offer.entity';
+import { VerificationStatus } from '../exporter/entities/exporter.entity';
 
 
 @Injectable()
@@ -227,10 +228,12 @@ export class GlobalBuyerService {
     // Persist status in database
     const buyer = await this.findByUserId(userId);
     if (!buyer) throw new NotFoundException('Buyer not found');
-    buyer.status = 'submitted'; // or 'under_review' if you prefer
+    // Mark as under review and record submitted timestamp
+    buyer.status = VerificationStatus.UNDER_REVIEW;
+    buyer.submittedDate = new Date();
     await this.globalBuyerRepository.save(buyer);
 
-  // No longer using in-memory store
+    // No longer using in-memory store
     return { success: true };
   }
 

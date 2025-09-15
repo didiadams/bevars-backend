@@ -35,18 +35,19 @@ export class BetterAuthService {
       console.log('Signup userData received:', userData);
 
       // Create user with proper field mapping
-      const user = this.userRepository.create({
-        email,
-        password: hashedPassword,
-        firstName: userData.firstName || '',
-        lastName: userData.lastName || '',
-        phoneNumber: userData.phoneNumber,
-        countryCode: userData.countryCode,
-        countryName: userData.countryName,
-        role: userData.role || UserRole.GLOBAL_BUYER,
-        companyName: userData.companyName,
-        isVerified: true, // Auto-verify for now
-      });
+        const user = this.userRepository.create({
+          email,
+          password: hashedPassword,
+          firstName: userData.firstName || '',
+          lastName: userData.lastName || '',
+          phoneNumber: userData.phoneNumber,
+          countryCode: userData.countryCode,
+          countryName: userData.countryName,
+          role: userData.role || UserRole.GLOBAL_BUYER,
+          companyName: userData.companyName,
+          isVerified: false, // User must be verified by admin
+          isActive: false,   // User must be activated by admin
+        });
 
       console.log('User entity before save:', user);
       const savedUser = await this.userRepository.save(user);
@@ -98,10 +99,10 @@ export class BetterAuthService {
         throw new UnauthorizedException('Invalid credentials');
       }
 
-      // Check if user is active
-      if (!user.isActive) {
-        throw new UnauthorizedException('Account is deactivated');
-      }
+        // Check if user is active
+        if (!user.isActive) {
+          throw new UnauthorizedException('Your account is not active yet. Please wait for admin approval.');
+        }
 
       // Generate JWT token
       const payload = { 
