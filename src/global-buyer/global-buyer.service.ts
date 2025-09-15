@@ -1,7 +1,7 @@
 
 import { Injectable, NotFoundException, UnauthorizedException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, MoreThanOrEqual } from 'typeorm';
+import { Repository, Between, MoreThanOrEqual, In } from 'typeorm';
 import { GlobalBuyerRepository } from './repositories/global-buyer.repository';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateGlobalBuyerDto } from './dto/create-global-buyer.dto';
@@ -9,6 +9,8 @@ import { UpdateGlobalBuyerDto } from './dto/update-global-buyer.dto';
 import { GlobalBuyerProfileDto } from './dto/global-buyer-profile.dto';
 import { GlobalBuyer } from './entities/global-buyer.entity';
 import { BuyerVerificationDocument } from './entities/buyer-verification-document.entity';
+import { VerificationDocument } from 'src/common/entities/verification-document.entity';
+import { VerificationRequirement } from 'src/common/entities/verification-requirement.entity';
 import { User } from '../user/entities/user.entity';
 import { v4 as uuidv4 } from 'uuid';
 import { Exporter } from '../exporter/entities/exporter.entity';
@@ -43,7 +45,14 @@ export class GlobalBuyerService {
   // List uploaded documents for a user (persistent)
   async listVerificationDocuments(userId: string) {
     const buyer = await this.findByUserId(userId);
-    // Return all document URLs for the user, matching frontend document IDs
+
+    // Prefer persisted shared documents
+    const persisted = await this.sharedVerificationRepo.find({ where: { buyer: { id: buyer.id } } });
+    if (persisted && persisted.length > 0) {
+      return persisted.map(d => ({ documentId: d.documentType, fileUrl: d.fileUrl, status: d.status, uploadedAt: d.uploadedAt }));
+    }
+
+    // Fallback to legacy columns
     return [
       {
         documentId: 'company_registration',
@@ -87,23 +96,17 @@ export class GlobalBuyerService {
         fileName: buyer.photoUrl ? 'Credit Report' : undefined,
         uploadedAt: buyer.photoUrl ? new Date() : undefined,
       },
-        {
-          documentId: 'certifications',
-          fileUrl: buyer.industryCertificationsUrl,
-          fileName: buyer.industryCertificationsUrl ? 'Industry Certifications' : undefined,
-          uploadedAt: buyer.industryCertificationsUrl ? new Date() : undefined,
-        },
-      {
-        documentId: 'facility_photos',
-        fileUrl: buyer.photoUrl,
-        fileName: buyer.photoUrl ? 'Facility Photos' : undefined,
-        uploadedAt: buyer.photoUrl ? new Date() : undefined,
-      },
       {
         documentId: 'certifications',
         fileUrl: buyer.industryCertificationsUrl,
         fileName: buyer.industryCertificationsUrl ? 'Industry Certifications' : undefined,
         uploadedAt: buyer.industryCertificationsUrl ? new Date() : undefined,
+      },
+      {
+        documentId: 'facility_photos',
+        fileUrl: buyer.photoUrl,
+        fileName: buyer.photoUrl ? 'Facility Photos' : undefined,
+        uploadedAt: buyer.photoUrl ? new Date() : undefined,
       },
     ].filter(doc => !!doc.fileUrl);
   }
@@ -123,6 +126,13 @@ export class GlobalBuyerService {
       facility_photos: 'photoUrl',
       certifications: 'industryCertificationsUrl',
     };
+    // Try removing from shared verification table first
+    const persisted = await this.sharedVerificationRepo.findOne({ where: { buyer: { id: buyer.id }, documentType: documentId } });
+    if (persisted) {
+      await this.sharedVerificationRepo.remove(persisted);
+      return { success: true };
+    }
+
     const column = docColumnMap[documentId];
     if (!column) throw new NotFoundException('Document type not found');
     if (!(buyer as any)[column]) throw new NotFoundException('Document not found');
@@ -136,6 +146,10 @@ export class GlobalBuyerService {
     private readonly cloudinaryService: CloudinaryService,
     @InjectRepository(BuyerVerificationDocument)
     private readonly verificationDocumentRepository: Repository<BuyerVerificationDocument>,
+    @InjectRepository(VerificationDocument)
+    private readonly sharedVerificationRepo: Repository<VerificationDocument>,
+  @InjectRepository(VerificationRequirement)
+  private readonly verificationRequirementRepository: Repository<VerificationRequirement>,
     @InjectRepository(Exporter)
     private readonly exporterRepository: Repository<Exporter>,
     @InjectRepository(SourcingRequest)
@@ -157,26 +171,47 @@ export class GlobalBuyerService {
   // Removed in-memory verificationStore. All verification data is now persisted in the database.
 
   async getVerificationOverview(userId: string) {
-    // Required document columns (match frontend)
-    const requiredColumns: Array<keyof GlobalBuyer> = [
-      'certificateUrl', // company_registration
-      'businessLicenseUrl', // business_license
-      'taxIdUrl', // tax_registration
-      'optionalDoc1Url', // bank_statement
-      'optionalDoc2Url', // financial_statement
-    ];
     const buyer = await this.findByUserId(userId);
-    // Count uploaded required documents
-    const documentsUploaded = requiredColumns.filter(col => !!(buyer as any)[col]).length;
-    const totalRequired = requiredColumns.length;
-  // All status and metadata are now read from the database
-  const status = buyer.status || 'not_started';
-  const reviewNotes = buyer.reviewNotes;
-  const submittedDate = buyer.submittedDate;
-  const approvedDate = buyer.approvedDate;
-  const reviewerName = buyer.reviewerName;
-  const creditRating = buyer.creditRating;
-  const verificationTier = buyer.verificationTier || 'standard';
+    // Get required document types from DB for buyer. If none are configured yet,
+    // fall back to the default list used by the frontend so totalRequired isn't 0.
+    const requirements = await this.verificationRequirementRepository.find({ where: { ownerType: 'buyer' } });
+    let requiredTypes = requirements.filter(r => r.required).map(r => r.documentType);
+    if (!requiredTypes || requiredTypes.length === 0) {
+      // Fallback default (mirror frontend `globalBuyerDocumentRequirements` required items)
+      requiredTypes = [
+        'company_registration',
+        'business_license',
+        'tax_registration',
+        'bank_statement',
+        'financial_statement',
+      ];
+    }
+
+    // Count persisted documents first
+    const persistedCount = await this.sharedVerificationRepo.count({ where: { buyer: { id: buyer.id }, documentType: In(requiredTypes) } });
+
+    // Fallback to legacy columns mapping if necessary
+    const legacyMap: Record<string, keyof GlobalBuyer> = {
+      company_registration: 'certificateUrl',
+      business_license: 'businessLicenseUrl',
+      tax_registration: 'taxIdUrl',
+      bank_statement: 'optionalDoc1Url',
+      financial_statement: 'optionalDoc2Url',
+    };
+    const legacyPresent = requiredTypes.filter(t => {
+      const col = legacyMap[t];
+      return col ? !!(buyer as any)[col] : false;
+    }).length;
+
+    const documentsUploaded = Math.max(persistedCount, legacyPresent);
+    const totalRequired = requiredTypes.length;
+    const status = buyer.status || 'not_started';
+    const reviewNotes = buyer.reviewNotes;
+    const submittedDate = buyer.submittedDate;
+    const approvedDate = buyer.approvedDate;
+    const reviewerName = buyer.reviewerName;
+    const creditRating = buyer.creditRating;
+    const verificationTier = buyer.verificationTier || 'standard';
     return {
       status,
       documentsUploaded,
@@ -209,6 +244,20 @@ export class GlobalBuyerService {
     };
     const column = docColumnMap[documentId];
     if (!column) throw new BadRequestException('Invalid document type');
+
+    // Persist to shared verification table for richer metadata
+    const doc = this.sharedVerificationRepo.create({
+      buyer: buyer,
+      ownerId: buyer.id,
+      documentType: documentId,
+      fileUrl,
+      fileName,
+      mimeType: file?.mimetype || null,
+      status: VerificationStatus.PENDING,
+    });
+    await this.sharedVerificationRepo.save(doc);
+
+    // Keep legacy column for backward compatibility
     (buyer as any)[column] = fileUrl;
     await this.globalBuyerRepository.save(buyer);
     return { success: true, fileUrl };

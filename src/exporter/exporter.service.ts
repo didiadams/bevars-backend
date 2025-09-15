@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindManyOptions, Between, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
+import { Repository, FindManyOptions, Between, MoreThanOrEqual, LessThanOrEqual, In } from 'typeorm';
 import { Exporter, VerificationStatus, ExporterCategory } from './entities/exporter.entity';
+import { VerificationDocument } from 'src/common/entities/verification-document.entity';
+import { VerificationRequirement } from 'src/common/entities/verification-requirement.entity';
 import { CreateExporterDto } from './dto/create-exporter.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { UpdateExporterDto } from './dto/update-exporter.dto';
@@ -14,10 +16,14 @@ export class ExporterService {
   constructor(
     @InjectRepository(Exporter)
     private exporterRepository: Repository<Exporter>,
+    @InjectRepository(VerificationDocument)
+    private verificationDocumentRepository: Repository<VerificationDocument>,
     @InjectRepository(SourcingRequest)
     private sourcingRequestRepository: Repository<SourcingRequest>,
     @InjectRepository(Offer)
     private offerRepository: Repository<Offer>,
+    @InjectRepository(VerificationRequirement)
+    private verificationRequirementRepository: Repository<VerificationRequirement>,
     private cloudinaryService: CloudinaryService,
   ) {}
 
@@ -99,17 +105,28 @@ export class ExporterService {
       const uploadResult = await this.cloudinaryService.uploadImage(file); // Changed method name
 
       // Update verification documents
-      const currentDocs = exporter.verificationDocuments || {};
-      currentDocs[documentType] = uploadResult.secure_url;
+      const fileUrl = uploadResult.secure_url;
 
+      // Persist to verification_document table for richer metadata
+      const doc = this.verificationDocumentRepository.create({
+        exporter: exporter,
+        ownerId: exporter.id,
+        documentType,
+        fileUrl,
+        fileName: file?.originalname || null,
+        mimeType: file?.mimetype || null,
+        status: VerificationStatus.PENDING,
+      });
+      await this.verificationDocumentRepository.save(doc);
+
+      // Keep backward-compatible JSON blob on exporter as well
+      const currentDocs = exporter.verificationDocuments || {};
+      currentDocs[documentType] = fileUrl;
       await this.exporterRepository.update(exporterId, {
         verificationDocuments: currentDocs,
       });
 
-      return {
-        url: uploadResult.secure_url,
-        documentType,
-      };
+      return { url: fileUrl, documentType };
     } catch (error) {
       throw new BadRequestException(`Failed to upload document: ${error.message}`);
     }
@@ -122,24 +139,21 @@ export class ExporterService {
       throw new BadRequestException('Exporter is already verified');
     }
 
-    // Align required documents with frontend IDs
-    const requiredDocuments = [
-      'cac_certificate',
-      'export_license',
-      'nafdac_certificate',
-      'phytosanitary_certificate',
-      'tax_clearance',
-    ];
+    // Fetch required documents from verification_requirement table
+    const requirements = await this.verificationRequirementRepository.find({ where: { ownerType: 'exporter', required: true } });
+    const requiredDocumentTypes = requirements.map(r => r.documentType);
 
-    const submittedDocuments = Object.keys(exporter.verificationDocuments || {});
-    const missingDocuments = requiredDocuments.filter(
-      doc => !submittedDocuments.includes(doc),
-    );
+    // Count persisted documents first
+    const persisted = await this.verificationDocumentRepository.find({ where: { exporter: { id: exporter.id } } });
+    const persistedTypes = persisted.map(p => p.documentType);
+
+    // Fallback to legacy JSON blob for clients that haven't migrated
+    const legacyTypes = Object.keys(exporter.verificationDocuments || {});
+
+    const missingDocuments = requiredDocumentTypes.filter(dt => !persistedTypes.includes(dt) && !legacyTypes.includes(dt));
 
     if (missingDocuments.length > 0) {
-      throw new BadRequestException(
-        `Missing required documents: ${missingDocuments.join(', ')}`,
-      );
+      throw new BadRequestException(`Missing required documents: ${missingDocuments.join(', ')}`);
     }
 
     exporter.verificationStatus = VerificationStatus.UNDER_REVIEW;
@@ -150,16 +164,25 @@ export class ExporterService {
   // Verification overview mirroring GlobalBuyerService
   async getVerificationOverview(userId: string) {
     const exporter = await this.findByUserId(userId);
-    // Align required documents with frontend IDs
-    const requiredIds = [
-      'cac_certificate',
-      'export_license',
-      'nafdac_certificate',
-      'phytosanitary_certificate',
-      'tax_clearance',
-    ];
+    // Get required document types from DB
+    const requirements = await this.verificationRequirementRepository.find({ where: { ownerType: 'exporter', required: true } });
+    let requiredIds = requirements.map(r => r.documentType);
+    // If no requirements have been seeded yet, fall back to a sensible default
+    // so the frontend doesn't see totalRequired === 0 and compute NaN/0/0 progress.
+    if (!requiredIds || requiredIds.length === 0) {
+      requiredIds = [
+        'cac_certificate',
+        'export_license',
+        'nafdac_certificate',
+        'phytosanitary_certificate',
+        'tax_clearance',
+      ];
+    }
+
+    // Count from persisted verification documents table (preferred)
+    const persistedCount = await this.verificationDocumentRepository.count({ where: { exporter: { id: exporter.id }, documentType: In(requiredIds) } });
     const docs = exporter.verificationDocuments || {};
-    const documentsUploaded = requiredIds.filter(k => !!(docs as any)[k]).length;
+    const documentsUploaded = Math.max(persistedCount, requiredIds.filter(k => !!(docs as any)[k]).length);
     const totalRequired = requiredIds.length;
     const status = exporter.verificationStatus
       ? exporter.verificationStatus.toLowerCase()
@@ -179,28 +202,41 @@ export class ExporterService {
 
   async listVerificationDocuments(userId: string) {
     const exporter = await this.findByUserId(userId);
+    // Prefer persisted documents
+    const persisted = await this.verificationDocumentRepository.find({ where: { exporter: { id: exporter.id } } });
+    if (persisted && persisted.length > 0) {
+      return persisted.map(d => ({ documentId: d.documentType, fileUrl: d.fileUrl, status: d.status, uploadedAt: d.uploadedAt }));
+    }
     const docs = exporter.verificationDocuments || {};
     return Object.keys(docs).map((key) => ({ documentId: key, fileUrl: (docs as any)[key] }));
   }
 
   async getVerificationDocument(userId: string, documentId: string) {
     const exporter = await this.findByUserId(userId);
+    const persisted = await this.verificationDocumentRepository.findOne({ where: { exporter: { id: exporter.id }, documentType: documentId } });
+    if (persisted) return { documentId: persisted.documentType, fileUrl: persisted.fileUrl, status: persisted.status };
+
     const docs = exporter.verificationDocuments || {};
     const fileUrl = (docs as any)[documentId];
-    if (!fileUrl) {
-      throw new NotFoundException('Document not found');
-    }
+    if (!fileUrl) throw new NotFoundException('Document not found');
     return { documentId, fileUrl };
   }
 
   async deleteVerificationDocument(userId: string, documentId: string) {
     const exporter = await this.findByUserId(userId);
-    const docs = { ...(exporter.verificationDocuments || {}) } as Record<string, string>;
-    if (!docs[documentId]) {
-      throw new NotFoundException('Document not found');
+    // Delete persisted doc if exists
+    const persisted = await this.verificationDocumentRepository.findOne({ where: { exporter: { id: exporter.id }, documentType: documentId } });
+    if (persisted) {
+      await this.verificationDocumentRepository.remove(persisted);
     }
-    delete docs[documentId];
-    await this.exporterRepository.update(exporter.id, { verificationDocuments: docs as any });
+
+    // Also remove from JSON blob for backward compatibility
+    const docs = { ...(exporter.verificationDocuments || {}) } as Record<string, string>;
+    if (docs[documentId]) {
+      delete docs[documentId];
+      await this.exporterRepository.update(exporter.id, { verificationDocuments: docs as any });
+    }
+
     return { success: true };
   }
 

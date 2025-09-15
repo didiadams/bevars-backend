@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { SourcingRequest } from 'src/sourcing-request/entities/sourcing-request.entity';
 import { Offer } from 'src/offer/entities/offer.entity';
+import { VerificationDocument } from 'src/common/entities/verification-document.entity';
 
 export enum ExportLicense {
   EXPORT_LICENSE = 'exportLicense',
@@ -145,6 +146,9 @@ export class Exporter {
   // Relationships
   @OneToMany(() => Offer, (offer) => offer.exporter)
   offers: Offer[];
+
+  @OneToMany(() => VerificationDocument, (doc) => doc.exporter)
+  verificationDocumentEntities: VerificationDocument[];
 
   @Column({
     type: 'simple-array',

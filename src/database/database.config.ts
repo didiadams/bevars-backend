@@ -6,7 +6,7 @@ import { DataSource, DataSourceOptions } from 'typeorm';
 dotenv.config();
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
-const useMigrations = process.env.USE_MIGRATIONS === 'true';
+const useMigrations = process.env.USE_MIGRATIONS === "true";
 
 // Heroku provides DATABASE_URL, so we need to parse it
 const getDatabaseUrl = () => {
