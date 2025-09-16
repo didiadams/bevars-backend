@@ -16,7 +16,6 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { SourcingRequest } from 'src/sourcing-request/entities/sourcing-request.entity';
-import { BuyerVerificationDocument } from './buyer-verification-document.entity';
 import { VerificationDocument } from 'src/common/entities/verification-document.entity';
 
 export enum BuyerType {
@@ -171,12 +170,9 @@ export class GlobalBuyer {
   @OneToMany(() => SourcingRequest, (request) => request.globalBuyer)
   sourcingRequests: SourcingRequest[];
 
-  @OneToMany(() => BuyerVerificationDocument, (doc) => doc.buyer)
-  verificationDocuments: BuyerVerificationDocument[];
-
-  // New relation to the shared verification documents table
+  // Use the shared verification documents table only
   @OneToMany(() => VerificationDocument, (doc) => doc.buyer)
-  verificationDocumentEntities: VerificationDocument[];
+  verificationDocuments: VerificationDocument[];
 
   @CreateDateColumn()
   createdAt: Date;

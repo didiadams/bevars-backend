@@ -8,7 +8,6 @@ import { CreateGlobalBuyerDto } from './dto/create-global-buyer.dto';
 import { UpdateGlobalBuyerDto } from './dto/update-global-buyer.dto';
 import { GlobalBuyerProfileDto } from './dto/global-buyer-profile.dto';
 import { GlobalBuyer } from './entities/global-buyer.entity';
-import { BuyerVerificationDocument } from './entities/buyer-verification-document.entity';
 import { VerificationDocument } from 'src/common/entities/verification-document.entity';
 import { VerificationRequirement } from 'src/common/entities/verification-requirement.entity';
 import { User } from '../user/entities/user.entity';
@@ -24,128 +23,33 @@ export class GlobalBuyerService {
   // Fetch a single verification document by documentId (correct placement inside class)
   async getVerificationDocument(userId: string, documentId: string) {
     const buyer = await this.findByUserId(userId);
-    // Map frontend document IDs to closest entity columns
-    const docColumnMap: Record<string, keyof GlobalBuyer> = {
-      company_registration: 'certificateUrl', // Certificate of Incorporation
-      business_license: 'businessLicenseUrl',
-      tax_registration: 'taxIdUrl',
-      bank_statement: 'optionalDoc1Url', // Use optionalDoc1Url for bank statement
-      financial_statement: 'optionalDoc2Url', // Use optionalDoc2Url for financial statement
-      trade_references: 'passportUrl', // Use passportUrl for trade references (or add new column)
-      credit_report: 'photoUrl', // Use photoUrl for credit report (or add new column)
-      facility_photos: 'photoUrl', // Use photoUrl for facility photos
-    certifications: 'industryCertificationsUrl', // Use new column for industry certifications
-    };
-    const column = docColumnMap[documentId];
-    if (!column) throw new BadRequestException('Invalid document type');
-    const fileUrl = (buyer as any)[column];
-    if (!fileUrl) throw new NotFoundException('Document not found');
-    return { documentId, fileUrl };
+    // Always read verification documents from the persisted shared verification table
+    const doc = await this.sharedVerificationRepo.findOne({ where: { buyer: { id: buyer.id }, documentType: documentId } });
+    if (!doc) throw new NotFoundException('Document not found');
+    return { documentId, fileUrl: doc.fileUrl, fileName: doc.fileName, status: doc.status, uploadedAt: doc.uploadedAt };
   }
   // List uploaded documents for a user (persistent)
   async listVerificationDocuments(userId: string) {
     const buyer = await this.findByUserId(userId);
-
-    // Prefer persisted shared documents
+    // Always return persisted shared verification documents
     const persisted = await this.sharedVerificationRepo.find({ where: { buyer: { id: buyer.id } } });
-    if (persisted && persisted.length > 0) {
-      return persisted.map(d => ({ documentId: d.documentType, fileUrl: d.fileUrl, status: d.status, uploadedAt: d.uploadedAt }));
-    }
-
-    // Fallback to legacy columns
-    return [
-      {
-        documentId: 'company_registration',
-        fileUrl: buyer.certificateUrl,
-        fileName: buyer.certificateUrl ? 'Company Registration' : undefined,
-        uploadedAt: buyer.certificateUrl ? new Date() : undefined,
-      },
-      {
-        documentId: 'business_license',
-        fileUrl: buyer.businessLicenseUrl,
-        fileName: buyer.businessLicenseUrl ? 'Business License' : undefined,
-        uploadedAt: buyer.businessLicenseUrl ? new Date() : undefined,
-      },
-      {
-        documentId: 'tax_registration',
-        fileUrl: buyer.taxIdUrl,
-        fileName: buyer.taxIdUrl ? 'Tax Registration' : undefined,
-        uploadedAt: buyer.taxIdUrl ? new Date() : undefined,
-      },
-      {
-        documentId: 'bank_statement',
-        fileUrl: buyer.optionalDoc1Url,
-        fileName: buyer.optionalDoc1Url ? 'Bank Statement' : undefined,
-        uploadedAt: buyer.optionalDoc1Url ? new Date() : undefined,
-      },
-      {
-        documentId: 'financial_statement',
-        fileUrl: buyer.optionalDoc2Url,
-        fileName: buyer.optionalDoc2Url ? 'Financial Statement' : undefined,
-        uploadedAt: buyer.optionalDoc2Url ? new Date() : undefined,
-      },
-      {
-        documentId: 'trade_references',
-        fileUrl: buyer.passportUrl,
-        fileName: buyer.passportUrl ? 'Trade References' : undefined,
-        uploadedAt: buyer.passportUrl ? new Date() : undefined,
-      },
-      {
-        documentId: 'credit_report',
-        fileUrl: buyer.photoUrl,
-        fileName: buyer.photoUrl ? 'Credit Report' : undefined,
-        uploadedAt: buyer.photoUrl ? new Date() : undefined,
-      },
-      {
-        documentId: 'certifications',
-        fileUrl: buyer.industryCertificationsUrl,
-        fileName: buyer.industryCertificationsUrl ? 'Industry Certifications' : undefined,
-        uploadedAt: buyer.industryCertificationsUrl ? new Date() : undefined,
-      },
-      {
-        documentId: 'facility_photos',
-        fileUrl: buyer.photoUrl,
-        fileName: buyer.photoUrl ? 'Facility Photos' : undefined,
-        uploadedAt: buyer.photoUrl ? new Date() : undefined,
-      },
-    ].filter(doc => !!doc.fileUrl);
+    if (!persisted || persisted.length === 0) return [];
+    return persisted.map(d => ({ documentId: d.documentType, fileUrl: d.fileUrl, fileName: d.fileName, status: d.status, uploadedAt: d.uploadedAt }));
   }
 
   // Delete an uploaded document (persistent)
   async deleteVerificationDocument(userId: string, documentId: string) {
     const buyer = await this.findByUserId(userId);
-    // Map frontend document IDs to closest entity columns
-    const docColumnMap: Record<string, keyof GlobalBuyer> = {
-      company_registration: 'certificateUrl',
-      business_license: 'businessLicenseUrl',
-      tax_registration: 'taxIdUrl',
-      bank_statement: 'optionalDoc1Url',
-      financial_statement: 'optionalDoc2Url',
-      trade_references: 'passportUrl',
-      credit_report: 'photoUrl',
-      facility_photos: 'photoUrl',
-      certifications: 'industryCertificationsUrl',
-    };
-    // Try removing from shared verification table first
+    // Only remove persisted verification documents. Legacy buyer columns are no longer used.
     const persisted = await this.sharedVerificationRepo.findOne({ where: { buyer: { id: buyer.id }, documentType: documentId } });
-    if (persisted) {
-      await this.sharedVerificationRepo.remove(persisted);
-      return { success: true };
-    }
-
-    const column = docColumnMap[documentId];
-    if (!column) throw new NotFoundException('Document type not found');
-    if (!(buyer as any)[column]) throw new NotFoundException('Document not found');
-    (buyer as any)[column] = null;
-    await this.globalBuyerRepository.save(buyer);
+    if (!persisted) throw new NotFoundException('Document not found');
+    await this.sharedVerificationRepo.remove(persisted);
     return { success: true };
   }
   constructor(
     private readonly globalBuyerRepository: GlobalBuyerRepository,
     @Inject(forwardRef(() => CloudinaryService))
     private readonly cloudinaryService: CloudinaryService,
-    @InjectRepository(BuyerVerificationDocument)
-    private readonly verificationDocumentRepository: Repository<BuyerVerificationDocument>,
     @InjectRepository(VerificationDocument)
     private readonly sharedVerificationRepo: Repository<VerificationDocument>,
   @InjectRepository(VerificationRequirement)
@@ -189,21 +93,8 @@ export class GlobalBuyerService {
 
     // Count persisted documents first
     const persistedCount = await this.sharedVerificationRepo.count({ where: { buyer: { id: buyer.id }, documentType: In(requiredTypes) } });
-
-    // Fallback to legacy columns mapping if necessary
-    const legacyMap: Record<string, keyof GlobalBuyer> = {
-      company_registration: 'certificateUrl',
-      business_license: 'businessLicenseUrl',
-      tax_registration: 'taxIdUrl',
-      bank_statement: 'optionalDoc1Url',
-      financial_statement: 'optionalDoc2Url',
-    };
-    const legacyPresent = requiredTypes.filter(t => {
-      const col = legacyMap[t];
-      return col ? !!(buyer as any)[col] : false;
-    }).length;
-
-    const documentsUploaded = Math.max(persistedCount, legacyPresent);
+    // Only consider persisted documents for verification progress
+    const documentsUploaded = persistedCount;
     const totalRequired = requiredTypes.length;
     const status = buyer.status || 'not_started';
     const reviewNotes = buyer.reviewNotes;
@@ -229,22 +120,6 @@ export class GlobalBuyerService {
     const buyer = await this.findByUserId(userId);
     const result = await this.cloudinaryService.uploadImage(file);
     const fileUrl = typeof result === 'object' && 'secure_url' in result ? result.secure_url : '';
-
-    // Map frontend document IDs to closest entity columns
-    const docColumnMap: Record<string, keyof GlobalBuyer> = {
-      company_registration: 'certificateUrl',
-      business_license: 'businessLicenseUrl',
-      tax_registration: 'taxIdUrl',
-      bank_statement: 'optionalDoc1Url',
-      financial_statement: 'optionalDoc2Url',
-      trade_references: 'passportUrl',
-      credit_report: 'photoUrl',
-      facility_photos: 'photoUrl',
-      certifications: 'industryCertificationsUrl',
-    };
-    const column = docColumnMap[documentId];
-    if (!column) throw new BadRequestException('Invalid document type');
-
     // Persist to shared verification table for richer metadata
     const doc = this.sharedVerificationRepo.create({
       buyer: buyer,
@@ -256,10 +131,6 @@ export class GlobalBuyerService {
       status: VerificationStatus.PENDING,
     });
     await this.sharedVerificationRepo.save(doc);
-
-    // Keep legacy column for backward compatibility
-    (buyer as any)[column] = fileUrl;
-    await this.globalBuyerRepository.save(buyer);
     return { success: true, fileUrl };
 // Ensure GlobalBuyer entity has these columns:
 // companyRegistrationUrl: string

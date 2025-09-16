@@ -12,7 +12,7 @@ import { DashboardController } from './controllers/dashboard.controller';
 import { User } from '../user/entities/user.entity';
 import { GlobalBuyer } from '../global-buyer/entities/global-buyer.entity';
 import { Exporter } from '../exporter/entities/exporter.entity';
-import { BuyerVerificationDocument } from '../global-buyer/entities/buyer-verification-document.entity';
+import { VerificationDocument } from '../common/entities/verification-document.entity';
 import { EmailLog } from '../mail/entities/email-log.entity';
 
 import { UserModule } from '../user/user.module';
@@ -25,11 +25,11 @@ import { CustomConfigService } from '../config/config.service';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      User,
-      GlobalBuyer,
-      Exporter,
-      BuyerVerificationDocument,
-      EmailLog,
+  User,
+  GlobalBuyer,
+  Exporter,
+  VerificationDocument,
+  EmailLog,
     ]),
     JwtModule.registerAsync({
       imports: [CustomConfigModule],

@@ -68,15 +68,7 @@ export class Exporter {
     },
     comment: 'Stores paths to verification documents',
   })
-  verificationDocuments: {
-    companyRegistration?: string; // CAC Certificate in Nigeria
-    exportLicense?: string;
-    phytosanitaryCertificate?: string;
-    qualityCertificate?: string;
-    businessLicense?: string;
-    taxCertificate?: string;
-    originCertificate?: string;
-  };
+  // legacy JSON blob removed - verification documents are stored in `VerificationDocument` table
 
   @Column({ type: 'enum', enum: VerificationStatus, default: VerificationStatus.PENDING })
   verificationStatus: VerificationStatus;
@@ -148,7 +140,7 @@ export class Exporter {
   offers: Offer[];
 
   @OneToMany(() => VerificationDocument, (doc) => doc.exporter)
-  verificationDocumentEntities: VerificationDocument[];
+  verificationDocuments: VerificationDocument[];
 
   @Column({
     type: 'simple-array',

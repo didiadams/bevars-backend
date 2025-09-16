@@ -120,11 +120,7 @@ export class ExporterService {
       await this.verificationDocumentRepository.save(doc);
 
       // Keep backward-compatible JSON blob on exporter as well
-      const currentDocs = exporter.verificationDocuments || {};
-      currentDocs[documentType] = fileUrl;
-      await this.exporterRepository.update(exporterId, {
-        verificationDocuments: currentDocs,
-      });
+      // No legacy JSON blob update — documents persisted in VerificationDocument table only
 
       return { url: fileUrl, documentType };
     } catch (error) {
@@ -147,10 +143,8 @@ export class ExporterService {
     const persisted = await this.verificationDocumentRepository.find({ where: { exporter: { id: exporter.id } } });
     const persistedTypes = persisted.map(p => p.documentType);
 
-    // Fallback to legacy JSON blob for clients that haven't migrated
-    const legacyTypes = Object.keys(exporter.verificationDocuments || {});
-
-    const missingDocuments = requiredDocumentTypes.filter(dt => !persistedTypes.includes(dt) && !legacyTypes.includes(dt));
+  // Only consider persisted verification documents
+  const missingDocuments = requiredDocumentTypes.filter(dt => !persistedTypes.includes(dt));
 
     if (missingDocuments.length > 0) {
       throw new BadRequestException(`Missing required documents: ${missingDocuments.join(', ')}`);
@@ -181,8 +175,7 @@ export class ExporterService {
 
     // Count from persisted verification documents table (preferred)
     const persistedCount = await this.verificationDocumentRepository.count({ where: { exporter: { id: exporter.id }, documentType: In(requiredIds) } });
-    const docs = exporter.verificationDocuments || {};
-    const documentsUploaded = Math.max(persistedCount, requiredIds.filter(k => !!(docs as any)[k]).length);
+  const documentsUploaded = persistedCount;
     const totalRequired = requiredIds.length;
     const status = exporter.verificationStatus
       ? exporter.verificationStatus.toLowerCase()
@@ -202,24 +195,16 @@ export class ExporterService {
 
   async listVerificationDocuments(userId: string) {
     const exporter = await this.findByUserId(userId);
-    // Prefer persisted documents
+    // Return persisted documents only
     const persisted = await this.verificationDocumentRepository.find({ where: { exporter: { id: exporter.id } } });
-    if (persisted && persisted.length > 0) {
-      return persisted.map(d => ({ documentId: d.documentType, fileUrl: d.fileUrl, status: d.status, uploadedAt: d.uploadedAt }));
-    }
-    const docs = exporter.verificationDocuments || {};
-    return Object.keys(docs).map((key) => ({ documentId: key, fileUrl: (docs as any)[key] }));
+    return persisted.map(d => ({ documentId: d.documentType, fileUrl: d.fileUrl, status: d.status, uploadedAt: d.uploadedAt }));
   }
 
   async getVerificationDocument(userId: string, documentId: string) {
     const exporter = await this.findByUserId(userId);
     const persisted = await this.verificationDocumentRepository.findOne({ where: { exporter: { id: exporter.id }, documentType: documentId } });
-    if (persisted) return { documentId: persisted.documentType, fileUrl: persisted.fileUrl, status: persisted.status };
-
-    const docs = exporter.verificationDocuments || {};
-    const fileUrl = (docs as any)[documentId];
-    if (!fileUrl) throw new NotFoundException('Document not found');
-    return { documentId, fileUrl };
+  if (!persisted) throw new NotFoundException('Document not found');
+  return { documentId: persisted.documentType, fileUrl: persisted.fileUrl, status: persisted.status };
   }
 
   async deleteVerificationDocument(userId: string, documentId: string) {
@@ -230,12 +215,7 @@ export class ExporterService {
       await this.verificationDocumentRepository.remove(persisted);
     }
 
-    // Also remove from JSON blob for backward compatibility
-    const docs = { ...(exporter.verificationDocuments || {}) } as Record<string, string>;
-    if (docs[documentId]) {
-      delete docs[documentId];
-      await this.exporterRepository.update(exporter.id, { verificationDocuments: docs as any });
-    }
+    // No legacy JSON blob to update; persisted record removed above
 
     return { success: true };
   }
@@ -386,14 +366,19 @@ export class ExporterService {
     }
 
     const currentDocs = exporter.verificationDocuments || {};
-    
-    uploadDto.forEach(doc => {
-      currentDocs[doc.documentType] = doc.fileUrl;
-    });
-
-    await this.exporterRepository.update(exporter.id, {
-      verificationDocuments: currentDocs,
-    });
+    // Persist each uploaded document to the shared VerificationDocument table
+    for (const doc of uploadDto) {
+      const record = this.verificationDocumentRepository.create({
+        exporter: exporter,
+        ownerId: exporter.id,
+        documentType: doc.documentType,
+        fileUrl: doc.fileUrl,
+        fileName: undefined,
+        mimeType: undefined,
+        status: VerificationStatus.PENDING,
+      });
+      await this.verificationDocumentRepository.save(record);
+    }
 
     return {
       success: true,

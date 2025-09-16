@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { User, UserRole, UserStatus } from '../../user/entities/user.entity';
 import { GlobalBuyer, VerificationTier } from '../../global-buyer/entities/global-buyer.entity';
 import { Exporter, VerificationStatus } from '../../exporter/entities/exporter.entity';
-import { BuyerVerificationDocument } from '../../global-buyer/entities/buyer-verification-document.entity';
+import { VerificationDocument } from '../../common/entities/verification-document.entity';
 import { AdminAuditService } from './admin-audit.service';
 
 @Injectable()
@@ -16,8 +16,8 @@ export class AdminUserService {
     private globalBuyerRepository: Repository<GlobalBuyer>,
     @InjectRepository(Exporter)
     private exporterRepository: Repository<Exporter>,
-    @InjectRepository(BuyerVerificationDocument)
-    private verificationDocRepository: Repository<BuyerVerificationDocument>,
+  @InjectRepository(VerificationDocument)
+  private verificationDocRepository: Repository<VerificationDocument>,
     @Inject(forwardRef(() => AdminAuditService))
     private auditService: AdminAuditService,
   ) {}
@@ -192,8 +192,7 @@ export class AdminUserService {
       .select([
         'exporter.id',
         'exporter.verificationStatus',
-        'exporter.verificationDocuments',
-        'exporter.businessDescription',
+          'exporter.businessDescription',
         'exporter.productCategories',
         'exporter.yearsInBusiness',
         'exporter.exportCapacityPerMonth',
@@ -500,22 +499,18 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
     entityId: buyer.id,
   }));
 
-  // Normalize Exporter docs
-  const exporterResults = exporters.map((exporter) => ({
-    id: exporter.id,
-    type: 'exporter' as const,
-    user: exporter.user,
-    documents: Object.entries(exporter.verificationDocuments || {}).map(
-      ([documentType, fileUrl]) => ({
-        documentType,
-        fileUrl,
-        status: exporter.verificationStatus,
-        uploadedAt: exporter.createdAt,
-      }),
-    ),
-    status: exporter.verificationStatus,
-    uploadedAt: exporter.createdAt,
-    entityId: exporter.id,
+  // Normalize Exporter docs by fetching persisted verification documents
+  const exporterResults = await Promise.all(exporters.map(async (exporter) => {
+    const docs = await this.verificationDocRepository.find({ where: { exporter: { id: exporter.id } } });
+    return {
+      id: exporter.id,
+      type: 'exporter' as const,
+      user: exporter.user,
+      documents: docs.map(d => ({ documentType: d.documentType, fileUrl: d.fileUrl, status: d.status, uploadedAt: d.uploadedAt })),
+      status: exporter.verificationStatus,
+      uploadedAt: exporter.createdAt,
+      entityId: exporter.id,
+    };
   }));
 
   return {
@@ -592,7 +587,6 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
       .leftJoinAndSelect('exporter.user', 'user')
       .select([
         'exporter.id',
-        'exporter.verificationDocuments',
         'exporter.verificationStatus',
         'exporter.createdAt',
         'user.id',
@@ -602,13 +596,9 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
         'user.companyName'
       ])
       .where('exporter.verificationStatus = :status', { status: VerificationStatus.PENDING })
-      .andWhere('exporter.verificationDocuments IS NOT NULL')
       .orderBy('exporter.createdAt', 'DESC');
 
     const [exporterDocs, exporterTotal] = await exporterDocsQuery.getManyAndCount();
-    
-    console.log('Exporter documents found:', exporterDocs.length);
-    console.log('Exporter documents:', JSON.stringify(exporterDocs, null, 2));
 
     // Combine and format results
     const allDocuments = [
@@ -628,11 +618,11 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
         },
         entityId: doc.buyer.id
       })),
-      ...exporterDocs.map(exporter => ({
+      ...await Promise.all(exporterDocs.map(async (exporter) => ({
         id: exporter.id,
         type: 'exporter',
         documentType: 'verification_package',
-        documents: exporter.verificationDocuments,
+        documents: await this.verificationDocRepository.find({ where: { exporter: { id: exporter.id } } }),
         status: exporter.verificationStatus,
         uploadedAt: exporter.createdAt,
         user: {
@@ -643,7 +633,7 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
           companyName: exporter.user.companyName
         },
         entityId: exporter.id
-      }))
+      })))
     ];
 
     // Sort by upload date and paginate
@@ -730,10 +720,10 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
       
       await this.userRepository.update(exporter.user.id, { isVerified: true });
     } else {
-      // Clear verification documents when rejected so user can upload again
+      // Remove persisted verification documents so exporter can re-upload
+      await this.verificationDocRepository.delete({ exporter: { id: exporterId } } as any);
       await this.exporterRepository.update(exporterId, { 
         verificationStatus: VerificationStatus.REJECTED,
-        verificationDocuments: null,
         verificationReviewedBy: adminId,
         verificationReviewedAt: new Date(),
         verificationNotes: rejectionReason || 'Documents rejected by admin'
@@ -791,10 +781,11 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
         throw new NotFoundException('Exporter not found');
       }
 
+      const docs = await this.verificationDocRepository.find({ where: { exporter: { id: exporter.id } } });
       return {
         id: exporter.id,
         type: 'exporter',
-        documents: exporter.verificationDocuments,
+        documents: docs.map(d => ({ documentType: d.documentType, fileUrl: d.fileUrl, status: d.status, uploadedAt: d.uploadedAt })),
         status: exporter.verificationStatus,
         uploadedAt: exporter.createdAt,
         verificationNotes: exporter.verificationNotes,
@@ -845,27 +836,16 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
 
   // Debug method to check all exporters (for debugging only)
   async debugGetAllExporters() {
-    const allExporters = await this.exporterRepository.find({
-      relations: ['user'],
-      select: {
-        id: true,
-        verificationStatus: true,
-        verificationDocuments: true,
-        createdAt: true,
-        user: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          role: true
-        }
-      }
-    });
-    
+    const allExporters = await this.exporterRepository.find({ relations: ['user'] });
+    const withDocs = await Promise.all(allExporters.map(async (exp) => {
+      const docs = await this.verificationDocRepository.find({ where: { exporter: { id: exp.id } } });
+      return { exporter: exp, documents: docs };
+    }));
+
     console.log('All exporters in DB:', allExporters.length);
-    console.log('Exporters:', JSON.stringify(allExporters, null, 2));
-    
-    return allExporters;
+    console.log('Exporters with docs sample:', JSON.stringify(withDocs.slice(0, 5), null, 2));
+
+    return withDocs;
   }
 
   // Search users with advanced filtering
