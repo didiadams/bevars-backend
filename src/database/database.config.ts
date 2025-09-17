@@ -41,6 +41,7 @@ const config = {
   migrations: isDevelopment
     ? [path.join(__dirname, '../migrations/*.ts')]
     : [path.join(__dirname, '../migrations/*.js')],
+  migrationsTransactionMode:process.env.MIGRATIONS_TRANSACTION_MODE || 'each', // allow migration-level `transaction = false`
   synchronize: useMigrations ? false : isDevelopment,
   migrationsRun: useMigrations && !isDevelopment,
   autoLoadEntities: true,
@@ -51,7 +52,7 @@ const config = {
   // 🚀 CONNECTION POOLING: Instead of creating new DB connection for each request,
   // we maintain a pool of reusable connections. This dramatically improves performance
   // under high load by avoiding connection overhead.
-  poolSize: process.env.NODE_ENV === 'production' ? 20 : 10, // Total connections in pool
+  poolSize: process.env.NODE_ENV === 'production' ? 10 : 5, // Total connections in pool
   
   // ⏱️ QUERY TIMEOUT: Prevents runaway queries from consuming resources indefinitely.
   // Any query taking longer than 5 seconds gets terminated automatically.
