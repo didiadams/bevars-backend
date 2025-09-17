@@ -2,7 +2,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AdvancedScalabilityOptimizations1726050000000 implements MigrationInterface {
   name = 'AdvancedScalabilityOptimizations1726050000000';
-
+ public transaction = false;
   public async up(queryRunner: QueryRunner): Promise<void> {
     // 1. Partitioning support for chat messages (by date)
     await queryRunner.query(`

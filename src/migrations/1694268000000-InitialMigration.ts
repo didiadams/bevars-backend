@@ -2,7 +2,7 @@ import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class InitialMigration1694268000000 implements MigrationInterface {
     name = 'InitialMigration1694268000000'
-
+ public transaction = false;
     public async up(queryRunner: QueryRunner): Promise<void> {
         // Create User table enums (if they don't exist)
         await queryRunner.query(`

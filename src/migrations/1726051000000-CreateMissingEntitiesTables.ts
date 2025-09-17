@@ -2,7 +2,7 @@ import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class CreateMissingEntitiesTables1726051000000 implements MigrationInterface {
     name = 'CreateMissingEntitiesTables1726051000000'
-
+public transaction = false;
     public async up(queryRunner: QueryRunner): Promise<void> {
         // Create enums for sourcing request (if they don't exist)
         await queryRunner.query(`

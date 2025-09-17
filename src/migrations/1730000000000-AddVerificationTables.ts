@@ -2,7 +2,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddVerificationTables1730000000000 implements MigrationInterface {
   name = 'AddVerificationTables1730000000000';
-
+public transaction = false;
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "verification_document" (

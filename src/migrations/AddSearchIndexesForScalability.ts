@@ -2,7 +2,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddSearchIndexesForScalability1726047600000 implements MigrationInterface {
   name = 'AddSearchIndexesForScalability1726047600000';
-
+ public transaction = false;
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Critical indexes for exporter search performance with millions of records
     

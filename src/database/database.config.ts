@@ -23,8 +23,8 @@ const getDatabaseUrl = () => {
   return {
     host: process.env.DATABASE_HOST || 'localhost',
     port: Number(process.env.DATABASE_PORT) || 5432,
-    username: process.env.DATABASE_USER || 'postgres',
-    password: process.env.DATABASE_PASSWORD || 'postgres',
+    username: process.env.DATABASE_USER || 'bevars_user',
+    password: process.env.DATABASE_PASSWORD || '@DIDIyano123',
     database: process.env.DATABASE_NAME || 'source_db',
   };
 };
