@@ -43,7 +43,8 @@ const config = {
   migrations: isDevelopment
     ? [path.join(__dirname, '../migrations/*.ts')]
     : [path.join(__dirname, '../migrations/*.js')],
-  migrationsTransactionMode: process.env.MIGRATIONS_TRANSACTION_MODE || 'each', // allow migration-level `transaction = false`
+  // Enforce per-migration transaction overrides for migrations that require non-transactional execution
+  migrationsTransactionMode: 'each', // allow migration-level `transaction = false`
   synchronize: useMigrations ? false : isDevelopment,
   migrationsRun: useMigrations && !isDevelopment,
   autoLoadEntities: true,

@@ -54,8 +54,9 @@ const AppDataSource = new DataSource({
   logging: isDevelopment,
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
 
-  // Allow per-migration transaction overrides (some migrations create indexes CONCURRENTLY)
-  migrationsTransactionMode: (process.env.MIGRATIONS_TRANSACTION_MODE as any) || 'each',
+  // Enforce per-migration transaction overrides. Some migrations use CREATE INDEX CONCURRENTLY
+  // which must run outside a transaction. Force 'each' here to allow per-migration overrides.
+  migrationsTransactionMode: 'each',
 
   // Connection pooling & driver extra settings copied from runtime config
   poolSize: process.env.NODE_ENV === 'production' ? 10 : 5,
