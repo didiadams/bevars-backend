@@ -3,10 +3,12 @@ import * as dotenv from 'dotenv';
 import { registerAs } from '@nestjs/config';
 import { DataSource, DataSourceOptions } from 'typeorm';
 
-dotenv.config();
+// Load environment-specific .env file: prefer .env.production in production
+const envPath = process.env.NODE_ENV === 'production' ? '.env.production' : '.env';
+dotenv.config({ path: envPath });
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
-const useMigrations = process.env.USE_MIGRATIONS === "true";
+const useMigrations = process.env.USE_MIGRATIONS === 'true';
 
 // Heroku provides DATABASE_URL, so we need to parse it
 const getDatabaseUrl = () => {
@@ -41,7 +43,7 @@ const config = {
   migrations: isDevelopment
     ? [path.join(__dirname, '../migrations/*.ts')]
     : [path.join(__dirname, '../migrations/*.js')],
-  migrationsTransactionMode:process.env.MIGRATIONS_TRANSACTION_MODE || 'each', // allow migration-level `transaction = false`
+  migrationsTransactionMode: process.env.MIGRATIONS_TRANSACTION_MODE || 'each', // allow migration-level `transaction = false`
   synchronize: useMigrations ? false : isDevelopment,
   migrationsRun: useMigrations && !isDevelopment,
   autoLoadEntities: true,
@@ -60,7 +62,7 @@ const config = {
   
   extra: {
     // 🔧 ADVANCED CONNECTION POOL SETTINGS
-    max: process.env.NODE_ENV === 'production' ? 20 : 10, // Maximum concurrent connections
+  max: process.env.NODE_ENV === 'production' ? 20 : 10, // Maximum concurrent connections
     min: 2, // Always keep 2 connections alive (prevents cold start delays)
     
     // ⏰ CONNECTION LIFECYCLE MANAGEMENT

@@ -2,7 +2,9 @@ import { DataSource } from 'typeorm';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
-dotenv.config();
+// Load environment-specific .env file: in production we prefer .env.production
+const envPath = process.env.NODE_ENV === 'production' ? '.env.production' : '.env';
+dotenv.config({ path: envPath });
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
@@ -21,43 +23,57 @@ const getDatabaseUrl = () => {
   return {
     host: process.env.DATABASE_HOST || 'localhost',
     port: Number(process.env.DATABASE_PORT) || 5432,
-    username: process.env.DATABASE_USER || 'postgres',
-    password: process.env.DATABASE_PASSWORD || 'postgres',
-    database: process.env.DATABASE_NAME || 'bevars_db',
+    username: process.env.DATABASE_USER || 'bevars_user',
+    password: process.env.DATABASE_PASSWORD || '@DIDIyano123',
+    database: process.env.DATABASE_NAME || 'source_db',
   };
 };
 
 const dbConfig = getDatabaseUrl();
 
 // 🔧 PRODUCTION-SAFE PATH RESOLUTION
-const getEntityPath = () => {
-  if (isDevelopment) {
-    // Development: Use TypeScript files from src/
-    return [path.join(__dirname, 'src/**/*.entity.ts')];
-  } else {
-    // Production: Use compiled JavaScript files from dist/
-    return [path.join(__dirname, 'dist/**/*.entity.js')];
-  }
-};
+const getEntityPath = () =>
+  isDevelopment
+    ? [path.join(__dirname, 'src/**/*.entity.ts')]
+    : [path.join(__dirname, 'dist/**/*.entity.js')];
 
-const getMigrationPath = () => {
-  if (isDevelopment) {
-    // Development: Use TypeScript files from src/migrations/
-    return [path.join(__dirname, 'src/migrations/*.ts')];
-  } else {
-    // Production: Use compiled JavaScript files from dist/migrations/
-    return [path.join(__dirname, 'dist/migrations/*.js')];
-  }
-};
+const getMigrationPath = () =>
+  isDevelopment
+    ? [path.join(__dirname, 'src/migrations/*.ts')]
+    : [path.join(__dirname, 'dist/migrations/*.js')];
 
-export const AppDataSource = new DataSource({
+// Mirror the runtime DB options from src/database/database.config.ts so the CLI uses
+// the same pooling/timeout/migration settings. This prevents migration runner from
+// failing due to different defaults (like transaction mode for migrations).
+const AppDataSource = new DataSource({
   type: 'postgres',
   ...dbConfig,
   entities: getEntityPath(),
   migrations: getMigrationPath(),
   synchronize: false, // Set to false when using migrations
   logging: isDevelopment,
-  ssl: process.env.DATABASE_URL ? {
-    rejectUnauthorized: false
-  } : false,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+
+  // Allow per-migration transaction overrides (some migrations create indexes CONCURRENTLY)
+  migrationsTransactionMode: (process.env.MIGRATIONS_TRANSACTION_MODE as any) || 'each',
+
+  // Connection pooling & driver extra settings copied from runtime config
+  poolSize: process.env.NODE_ENV === 'production' ? 10 : 5,
+  maxQueryExecutionTime: 5000,
+  extra: {
+    max: process.env.NODE_ENV === 'production' ? 20 : 10,
+    min: 2,
+    acquire: 60000,
+    idle: 10000,
+    evict: 1000,
+    statement_timeout: 30000,
+    query_timeout: 30000,
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000,
+    application_name: 'bevars-exporters',
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
+  },
 });
+
+export { AppDataSource };
