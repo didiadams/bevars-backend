@@ -46,7 +46,7 @@ const config = {
   // Enforce per-migration transaction overrides for migrations that require non-transactional execution
   migrationsTransactionMode: 'each', // allow migration-level `transaction = false`
   synchronize: useMigrations ? false : isDevelopment,
-  migrationsRun: useMigrations && !isDevelopment,
+  migrationsRun: false, // disable auto-run to avoid accidental prod runs
   autoLoadEntities: true,
   ssl: process.env.DATABASE_URL ? {
     rejectUnauthorized: false
