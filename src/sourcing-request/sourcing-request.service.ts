@@ -75,8 +75,29 @@ export class SourcingRequestService {
       .addOrderBy('request.createdAt', 'DESC')
       .getManyAndCount();
 
+    // sanitize nested user objects before returning
+    const safeRequests = requests.map(r => ({
+      ...r,
+      globalBuyer: r.globalBuyer ? ({
+        ...r.globalBuyer,
+        user: r.globalBuyer.user ? ({
+          id: r.globalBuyer.user.id,
+          email: r.globalBuyer.user.email,
+          firstName: r.globalBuyer.user.firstName,
+          lastName: r.globalBuyer.user.lastName,
+          companyName: r.globalBuyer.user.companyName,
+          role: r.globalBuyer.user.role,
+          isVerified: r.globalBuyer.user.isVerified,
+          isActive: r.globalBuyer.user.isActive,
+          status: r.globalBuyer.user.status,
+          phoneNumber: r.globalBuyer.user.phoneNumber,
+          countryName: r.globalBuyer.user.countryName,
+        }) : null,
+      }) : null,
+    } as any));
+
     return {
-      requests,
+      requests: safeRequests,
       total,
       page,
       totalPages: Math.ceil(total / limit),

@@ -7,6 +7,7 @@ import {
   UpdateDateColumn,
   CreateDateColumn,
 } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { GlobalBuyer } from 'src/global-buyer/entities/global-buyer.entity';
 import { Exporter } from 'src/exporter/entities/exporter.entity';
 
@@ -32,6 +33,7 @@ export class User {
   email: string;
 
   @Column()
+  @Exclude()
   password: string;
 
   @Column({ type: 'enum', enum: UserRole })

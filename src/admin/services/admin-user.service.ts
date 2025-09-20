@@ -106,7 +106,9 @@ export class AdminUserService {
       throw new NotFoundException('User not found');
     }
 
-    return user;
+    // Ensure password (and any sensitive fields) are never returned
+    const { password: _, ...safeUser } = user as any;
+    return safeUser;
   }
 
   // Activate/Deactivate user
@@ -487,7 +489,19 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
   const buyerResults = buyers.map((buyer) => ({
     id: buyer.id,
     type: 'buyer' as const,
-    user: buyer.user,
+    user: {
+      id: buyer.user.id,
+      email: buyer.user.email,
+      firstName: buyer.user.firstName,
+      lastName: buyer.user.lastName,
+      companyName: buyer.user.companyName,
+      role: buyer.user.role,
+      isVerified: buyer.user.isVerified,
+      isActive: buyer.user.isActive,
+      status: buyer.user.status,
+      phoneNumber: buyer.user.phoneNumber,
+      countryName: buyer.user.countryName,
+    },
     documents: buyer.verificationDocuments.map((doc) => ({
       documentType: doc.documentType,
       fileUrl: doc.fileUrl,
@@ -505,7 +519,19 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
     return {
       id: exporter.id,
       type: 'exporter' as const,
-      user: exporter.user,
+      user: {
+        id: exporter.user.id,
+        email: exporter.user.email,
+        firstName: exporter.user.firstName,
+        lastName: exporter.user.lastName,
+        companyName: exporter.user.companyName,
+        role: exporter.user.role,
+        isVerified: exporter.user.isVerified,
+        isActive: exporter.user.isActive,
+        status: exporter.user.status,
+        phoneNumber: exporter.user.phoneNumber,
+        countryName: exporter.user.countryName,
+      },
       documents: docs.map(d => ({ documentType: d.documentType, fileUrl: d.fileUrl, status: d.status, uploadedAt: d.uploadedAt })),
       status: exporter.verificationStatus,
       uploadedAt: exporter.createdAt,
@@ -839,7 +865,35 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
     const allExporters = await this.exporterRepository.find({ relations: ['user'] });
     const withDocs = await Promise.all(allExporters.map(async (exp) => {
       const docs = await this.verificationDocRepository.find({ where: { exporter: { id: exp.id } } });
-      return { exporter: exp, documents: docs };
+      // sanitize nested user on exporter before returning
+      const safeExporterUser = exp.user ? ({
+        id: exp.user.id,
+        email: exp.user.email,
+        firstName: exp.user.firstName,
+        lastName: exp.user.lastName,
+        companyName: exp.user.companyName,
+        role: exp.user.role,
+        isVerified: exp.user.isVerified,
+        isActive: exp.user.isActive,
+        status: exp.user.status,
+        phoneNumber: exp.user.phoneNumber,
+        countryName: exp.user.countryName,
+      }) : null;
+
+      const safeExporter = {
+        id: exp.id,
+        verificationStatus: exp.verificationStatus,
+        businessDescription: exp.businessDescription,
+        productCategories: exp.productCategories,
+        yearsInBusiness: exp.yearsInBusiness,
+        exportCapacityPerMonth: exp.exportCapacityPerMonth,
+        isVerified: exp.isVerified,
+        createdAt: exp.createdAt,
+        updatedAt: exp.updatedAt,
+        user: safeExporterUser,
+      };
+
+      return { exporter: safeExporter, documents: docs };
     }));
 
     console.log('All exporters in DB:', allExporters.length);

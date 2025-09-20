@@ -178,6 +178,23 @@ export class GlobalBuyerService {
       throw new NotFoundException('Global buyer not found');
     }
 
+    // sanitize nested user
+    if (globalBuyer && (globalBuyer as any).user) {
+      (globalBuyer as any).user = ({
+        id: (globalBuyer as any).user.id,
+        email: (globalBuyer as any).user.email,
+        firstName: (globalBuyer as any).user.firstName,
+        lastName: (globalBuyer as any).user.lastName,
+        companyName: (globalBuyer as any).user.companyName,
+        role: (globalBuyer as any).user.role,
+        isVerified: (globalBuyer as any).user.isVerified,
+        isActive: (globalBuyer as any).user.isActive,
+        status: (globalBuyer as any).user.status,
+        phoneNumber: (globalBuyer as any).user.phoneNumber,
+        countryName: (globalBuyer as any).user.countryName,
+      }) as any;
+    }
+
     return globalBuyer;
   }
 
@@ -186,6 +203,22 @@ export class GlobalBuyerService {
 
     if (!globalBuyer) {
       throw new NotFoundException('Global buyer profile not found');
+    }
+
+    if (globalBuyer && (globalBuyer as any).user) {
+      (globalBuyer as any).user = ({
+        id: (globalBuyer as any).user.id,
+        email: (globalBuyer as any).user.email,
+        firstName: (globalBuyer as any).user.firstName,
+        lastName: (globalBuyer as any).user.lastName,
+        companyName: (globalBuyer as any).user.companyName,
+        role: (globalBuyer as any).user.role,
+        isVerified: (globalBuyer as any).user.isVerified,
+        isActive: (globalBuyer as any).user.isActive,
+        status: (globalBuyer as any).user.status,
+        phoneNumber: (globalBuyer as any).user.phoneNumber,
+        countryName: (globalBuyer as any).user.countryName,
+      }) as any;
     }
 
     return globalBuyer;

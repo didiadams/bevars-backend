@@ -45,10 +45,28 @@ export class ExporterService {
   }
 
   async findAll(options?: FindManyOptions<Exporter>): Promise<Exporter[]> {
-    return await this.exporterRepository.find({
+    const exporters = await this.exporterRepository.find({
       relations: ['user', 'offers'],
       ...options,
     });
+
+    // sanitize nested user objects before returning
+    return exporters.map(exp => ({
+      ...exp,
+      user: exp.user ? ({
+        id: exp.user.id,
+        email: exp.user.email,
+        firstName: exp.user.firstName,
+        lastName: exp.user.lastName,
+        companyName: exp.user.companyName,
+        role: exp.user.role,
+        isVerified: exp.user.isVerified,
+        isActive: exp.user.isActive,
+        status: exp.user.status,
+        phoneNumber: exp.user.phoneNumber,
+        countryName: exp.user.countryName,
+      }) : null,
+    } as any));
   }
 
   async findOne(id: string): Promise<Exporter> {
@@ -59,6 +77,23 @@ export class ExporterService {
 
     if (!exporter) {
       throw new NotFoundException(`Exporter with ID ${id} not found`);
+    }
+
+    // sanitize nested user
+    if (exporter && exporter.user) {
+      exporter.user = ({
+        id: exporter.user.id,
+        email: exporter.user.email,
+        firstName: exporter.user.firstName,
+        lastName: exporter.user.lastName,
+        companyName: exporter.user.companyName,
+        role: exporter.user.role,
+        isVerified: exporter.user.isVerified,
+        isActive: exporter.user.isActive,
+        status: exporter.user.status,
+        phoneNumber: exporter.user.phoneNumber,
+        countryName: exporter.user.countryName,
+      }) as any;
     }
 
     return exporter;
@@ -72,6 +107,22 @@ export class ExporterService {
 
     if (!exporter) {
       throw new NotFoundException(`Exporter for user ID ${userId} not found`);
+    }
+
+    if (exporter && exporter.user) {
+      exporter.user = ({
+        id: exporter.user.id,
+        email: exporter.user.email,
+        firstName: exporter.user.firstName,
+        lastName: exporter.user.lastName,
+        companyName: exporter.user.companyName,
+        role: exporter.user.role,
+        isVerified: exporter.user.isVerified,
+        isActive: exporter.user.isActive,
+        status: exporter.user.status,
+        phoneNumber: exporter.user.phoneNumber,
+        countryName: exporter.user.countryName,
+      }) as any;
     }
 
     return exporter;

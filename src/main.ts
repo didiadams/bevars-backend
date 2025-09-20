@@ -1,7 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exception.filter';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 //import helmet from 'helmet';
 
 async function bootstrap() {
@@ -71,6 +72,10 @@ app.enableCors({
 
   app.setGlobalPrefix('api/v1');
   app.useGlobalFilters(new AllExceptionsFilter());
+  // Enable global serialization so that class-transformer decorators like @Exclude()
+  // on entities are respected when sending responses. This prevents sensitive fields
+  // like `password` from being serialized.
+  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   console.log(process.env.BACKEND_PORT, 'port');
   await app.listen(process.env.PORT ?? 3000);
 }
