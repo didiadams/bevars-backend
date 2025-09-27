@@ -1,4 +1,4 @@
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatus } from '../entities/order.entity';
@@ -51,28 +51,38 @@ export class OrderRepository extends Repository<Order> {
   }
 
   async getOrderStatistics(exporterId?: string, globalBuyerId?: string): Promise<any> {
-    const query = this.createQueryBuilder('order');
-    
-    if (exporterId) {
-      query.where('order.exporterId = :exporterId', { exporterId });
-    }
-    
-    if (globalBuyerId) {
-      query.where('order.globalBuyerId = :globalBuyerId', { globalBuyerId });
-    }
-
-    const total = await query.getCount();
-    const pending = await query.andWhere('order.status = :status', { status: OrderStatus.PENDING }).getCount();
-    const confirmed = await query.andWhere('order.status = :status', { status: OrderStatus.CONFIRMED }).getCount();
-    const completed = await query.andWhere('order.status = :status', { status: OrderStatus.COMPLETED }).getCount();
-    const cancelled = await query.andWhere('order.status = :status', { status: OrderStatus.CANCELLED }).getCount();
-
-    return {
-      total,
-      pending,
-      confirmed,
-      completed,
-      cancelled,
+    // Helper to apply exporter/global buyer filters to a fresh query builder
+    const applyFilters = (qb: SelectQueryBuilder<Order>) => {
+      let first = true;
+      if (exporterId) {
+        qb.where('order.exporterId = :exporterId', { exporterId });
+        first = false;
+      }
+      if (globalBuyerId) {
+        if (first) {
+          qb.where('order.globalBuyerId = :globalBuyerId', { globalBuyerId });
+        } else {
+          qb.andWhere('order.globalBuyerId = :globalBuyerId', { globalBuyerId });
+        }
+      }
+      return qb;
     };
+
+    // Use fresh builders for each count so additional .andWhere() calls don't accumulate
+    const totalQb = applyFilters(this.createQueryBuilder('order'));
+    const pendingQb = applyFilters(this.createQueryBuilder('order')).andWhere('order.status = :status', { status: OrderStatus.PENDING });
+    const confirmedQb = applyFilters(this.createQueryBuilder('order')).andWhere('order.status = :status', { status: OrderStatus.CONFIRMED });
+    const completedQb = applyFilters(this.createQueryBuilder('order')).andWhere('order.status = :status', { status: OrderStatus.COMPLETED });
+    const cancelledQb = applyFilters(this.createQueryBuilder('order')).andWhere('order.status = :status', { status: OrderStatus.CANCELLED });
+
+    const [total, pending, confirmed, completed, cancelled] = await Promise.all([
+      totalQb.getCount(),
+      pendingQb.getCount(),
+      confirmedQb.getCount(),
+      completedQb.getCount(),
+      cancelledQb.getCount(),
+    ]);
+
+    return { total, pending, confirmed, completed, cancelled };
   }
 }

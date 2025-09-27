@@ -63,6 +63,11 @@ app.enableCors({
       whitelist: true,
       enableDebugMessages: true,
       forbidNonWhitelisted: false, // Allow extra properties but ignore them
+      // Allow implicit type conversion (e.g. "123" -> number, "true" -> boolean)
+      // so frontend string-form payloads are transformed to the DTO types during validation.
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
       validationError: {
         target: false,
         value: true,

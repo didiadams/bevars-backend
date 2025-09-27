@@ -235,7 +235,13 @@ export class GlobalBuyerService {
     const globalBuyer = await this.findByUserId(userId);
   
     const stats = await this.globalBuyerRepository.getDashboardStats(globalBuyer.id);
- console.log(stats, '@@@stat')
+    // Debug: cross-check using direct repository count to ensure SQL aggregation correctness
+    try {
+      const directActiveCount = await this.sourcingRequestRepository.count({ where: { globalBuyerId: globalBuyer.id, status: RequestStatus.ACTIVE } });
+      console.log('dashboardStats(repo):', { rawStats: stats, directActiveCount });
+    } catch (e) {
+      console.warn('Failed to run directActiveCount check', e?.message || e);
+    }
     return {
       activeSourcingRequests: stats.activeSourcingRequests || 0,
       totalOffers: stats.totalOffers || 0,

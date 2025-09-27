@@ -1,9 +1,12 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, Inject, forwardRef } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, Inject, forwardRef, ForbiddenException, HttpCode, HttpStatus } from '@nestjs/common';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 import { CreateSourcingRequestDto } from './dto/create-sourcing-request.dto';
 import { UpdateSourcingRequestDto } from './dto/update-sourcing-request.dto';
+import { ExtendDeadlineDto } from './dto/extend-deadline.dto';
+import { InviteExporterDto } from './dto/invite-exporter.dto';
+import { RejectOfferDto } from './dto/reject-offer.dto';
 import { SourcingRequestService } from './sourcing-request.service';
 import { GlobalBuyerService } from '../global-buyer/global-buyer.service';
 
@@ -79,6 +82,7 @@ export class SourcingRequestController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
+  @HttpCode(HttpStatus.CREATED)
   async create(@Body() createDto: CreateSourcingRequestDto, @Request() req) {
     // Get the correct global buyer ID for this user
     const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
@@ -117,7 +121,7 @@ export class SourcingRequestController {
   @Post(':id/extend-deadline')
   async extendDeadline(
     @Param('id') id: string,
-    @Body() extendDto: { newDeadline: string; reason?: string },
+    @Body() extendDto: ExtendDeadlineDto,
     @Request() req
   ) {
     // Get the global buyer ID for authorization
@@ -129,7 +133,7 @@ export class SourcingRequestController {
   @Post(':id/invite-exporter')
   async inviteExporter(
     @Param('id') id: string,
-    @Body() inviteDto: { exporterId: string; message?: string },
+    @Body() inviteDto: InviteExporterDto,
     @Request() req
   ) {
     // Get the global buyer ID for authorization
@@ -137,10 +141,7 @@ export class SourcingRequestController {
     return this.sourcingRequestService.inviteExporter(id, inviteDto, globalBuyer.id);
   }
 
-  @Get(':id/offers')
-  async getOffers(@Param('id') id: string, @Request() req?) {
-    return this.sourcingRequestService.getOffers(id, req?.user?.id);
-  }
+  // NOTE: offers access requires authentication and ownership validation below.
 
   @Get(':id/analytics')
   @UseGuards(JwtAuthGuard)
@@ -167,7 +168,7 @@ export class SourcingRequestController {
     // Get global buyer to verify ownership
     const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
     if (request.globalBuyerId !== globalBuyer.id) {
-      throw new Error('You can only view offers for your own sourcing requests');
+      throw new ForbiddenException('You can only view offers for your own sourcing requests');
     }
     
     // Return offers for this sourcing request
@@ -182,7 +183,7 @@ export class SourcingRequestController {
     const request = await this.sourcingRequestService.findOne(id, req.user.id);
     
     if (request.globalBuyerId !== req.user.globalBuyerId && request.globalBuyerId !== req.user.id) {
-      throw new Error('You can only accept offers for your own sourcing requests');
+      throw new ForbiddenException('You can only accept offers for your own sourcing requests');
     }
     
     // This would need to be implemented in the sourcing request service
@@ -195,13 +196,13 @@ export class SourcingRequestController {
   async rejectOffer(
     @Param('id') id: string, 
     @Param('offerId') offerId: string, 
-    @Body() rejectDto: { reason?: string },
+    @Body() rejectDto: RejectOfferDto,
     @Request() req
   ) {
     const request = await this.sourcingRequestService.findOne(id, req.user.id);
     
     if (request.globalBuyerId !== req.user.globalBuyerId && request.globalBuyerId !== req.user.id) {
-      throw new Error('You can only reject offers for your own sourcing requests');
+      throw new ForbiddenException('You can only reject offers for your own sourcing requests');
     }
     
     return { message: 'Offer rejection endpoint - to be implemented with offer service' };

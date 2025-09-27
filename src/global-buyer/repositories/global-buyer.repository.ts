@@ -54,13 +54,15 @@ export class GlobalBuyerRepository extends Repository<GlobalBuyer> {
   }
 
   async getDashboardStats(globalBuyerId: string): Promise<any> {
+    // Use Postgres FILTER clause for clearer numeric aggregation and to avoid
+    // ambiguity when joining offers which could duplicate request rows.
     const result = await this.createQueryBuilder('buyer')
       .leftJoin('buyer.sourcingRequests', 'request')
       .leftJoin('request.offers', 'offer')
       .select([
-        'COUNT(DISTINCT CASE WHEN request.status = \'active\' THEN request.id END) as activeSourcingRequests',
-        'COUNT(DISTINCT offer.id) as totalOffers',
-        'AVG(buyer.averageOrderValue) as averageOrderValue',
+        `COUNT(DISTINCT request.id) FILTER (WHERE request.status = 'active') as "activeSourcingRequests"`,
+        `COUNT(DISTINCT offer.id) as "totalOffers"`,
+        `AVG(buyer.averageOrderValue)::float as "averageOrderValue"`,
       ])
       .where('buyer.id = :id', { id: globalBuyerId })
       .getRawOne();

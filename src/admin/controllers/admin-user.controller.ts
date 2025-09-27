@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Put, Param, Query, Body, UseGuards, Request, ParseIntPipe, ParseBoolPipe } from '@nestjs/common';
-import { IsBoolean, IsNotEmpty } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsString, IsOptional, IsIn } from 'class-validator';
 import { AdminGuard } from '../guards/admin.guard';
 import { AdminUserService } from '../services/admin-user.service';
 import { UserRole, UserStatus } from '../../user/entities/user.entity';
@@ -18,17 +18,32 @@ class ToggleUserVerificationDto {
 }
 
 class UpdateDocumentStatusDto {
+  @IsString()
+  @IsIn(['approved', 'rejected'])
   status: 'approved' | 'rejected';
+
+  @IsOptional()
+  @IsString()
   rejectionReason?: string;
 }
 
 class UpdateBuyerDocumentStatusDto {
+  @IsString()
+  @IsIn(['approved', 'rejected'])
   status: 'approved' | 'rejected';
+
+  @IsOptional()
+  @IsString()
   rejectionReason?: string;
 }
 
 class UpdateExporterVerificationStatusDto {
+  @IsString()
+  @IsIn(['approved', 'rejected'])
   status: 'approved' | 'rejected';
+
+  @IsOptional()
+  @IsString()
   rejectionReason?: string;
 }
 
@@ -185,17 +200,19 @@ export class AdminUserController {
   // Update buyer document verification status
   @Put('documents/buyer/:id/status')
   async updateBuyerDocumentStatus(
-    @Param('id') documentId: string,
+    @Param('id') buyerId: string,
     @Body() dto: UpdateBuyerDocumentStatusDto,
     @Request() req: any,
   ) {
+    console.log('@@@Updating buyer document status:', { buyerId, status: dto.status, rejectionReason: dto.rejectionReason });
     return this.adminUserService.updateBuyerDocumentStatus(
-      documentId, 
+      buyerId, 
       dto.status, 
       req.user.sub, 
       dto.rejectionReason
     );
   }
+
 
   // Update exporter verification status
   @Put('documents/exporter/:id/status')
@@ -204,6 +221,7 @@ export class AdminUserController {
     @Body() dto: UpdateExporterVerificationStatusDto,
     @Request() req: any,
   ) {
+    console.log('Updating exporter verification status:', { exporterId, status: dto.status, rejectionReason: dto.rejectionReason });
     return this.adminUserService.updateExporterVerificationStatus(
       exporterId, 
       dto.status, 

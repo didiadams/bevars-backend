@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { User, UserRole, UserStatus } from '../../user/entities/user.entity';
 import { GlobalBuyer, VerificationTier } from '../../global-buyer/entities/global-buyer.entity';
 import { Exporter, VerificationStatus } from '../../exporter/entities/exporter.entity';
@@ -123,9 +123,7 @@ export class AdminUserService {
       throw new BadRequestException('Cannot modify admin user status');
     }
 
-    console.log(`Toggling user status for ${user.email}:`);
-    console.log(`  Current: isActive=${user.isActive}, status=${user.status}`);
-    console.log(`  New: isActive=${isActive}, status=${isActive ? UserStatus.ACTIVE : UserStatus.SUSPENDED}`);
+
 
     const newStatus = isActive ? UserStatus.ACTIVE : UserStatus.SUSPENDED;
     const updateData = { 
@@ -133,18 +131,18 @@ export class AdminUserService {
       status: newStatus,
     };
 
-    console.log(`  Update data:`, updateData);
+  
 
     // Try using save() instead of update() to ensure the entity is properly updated
     user.isActive = isActive;
     user.status = newStatus;
     
     const savedUser = await this.userRepository.save(user);
-    console.log(`  After save: isActive=${savedUser.isActive}, status=${savedUser.status}`);
+
 
     // Double-check by fetching fresh from database
     const freshUser = await this.userRepository.findOne({ where: { id: userId } });
-    console.log(`  Fresh from DB: isActive=${freshUser?.isActive}, status=${freshUser?.status}`);
+  
 
     // Log admin action (we'll implement this in the logging service)
     await this.logAdminAction(adminId, `${isActive ? 'Activated' : 'Deactivated'} user: ${user.email}`);
@@ -460,61 +458,112 @@ export class AdminUserService {
   // Get verification documents
 // admin-user.service.ts
 async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus | string) {
-  const qbBuyer = this.globalBuyerRepository.createQueryBuilder('buyer')
-    .leftJoinAndSelect('buyer.user', 'user')
-    .leftJoinAndSelect('buyer.verificationDocuments', 'documents')
-    .skip((page - 1) * limit)
-    .take(limit);
+  let buyers: any[] = [];
+  let buyersCount = 0;
 
+  // If a status filter is provided, fetch buyers based on matching verification documents
   if (status) {
     const statuses = Array.isArray(status) ? status : status.split(',');
-    qbBuyer.andWhere('documents.status IN (:...statuses)', { statuses });
+
+    // Find documents matching the requested statuses and include buyer + user
+    const matchedDocs = await this.verificationDocRepository
+      .createQueryBuilder('doc')
+      .leftJoinAndSelect('doc.buyer', 'buyer')
+      .leftJoinAndSelect('buyer.user', 'user')
+      .where('doc.status IN (:...statuses)', { statuses })
+      .getMany();
+
+    // Group documents by buyer id
+    const buyerMap = new Map<string, any>();
+    for (const d of matchedDocs) {
+      if (!d.buyer) continue;
+      const bId = d.buyer.id;
+      if (!buyerMap.has(bId)) {
+        buyerMap.set(bId, { buyer: d.buyer, docs: [] });
+      }
+      buyerMap.get(bId).docs.push(d);
+    }
+
+    // Also include buyers whose global buyer.status matches the requested statuses
+    const buyersByStatus = await this.globalBuyerRepository.find({
+      where: { status: In(statuses) },
+      relations: ['user', 'verificationDocuments'],
+    });
+
+    for (const b of buyersByStatus) {
+      if (!buyerMap.has(b.id)) {
+        buyerMap.set(b.id, { buyer: b, docs: b.verificationDocuments || [] });
+      }
+    }
+
+    // Convert to array of buyers (do NOT apply per-entity pagination here)
+    const allBuyerEntries = Array.from(buyerMap.values()).map((entry) => ({ buyer: entry.buyer, docs: entry.docs }));
+    buyersCount = allBuyerEntries.length;
+
+    // Attach verificationDocuments for later normalization step
+    buyers = allBuyerEntries.map((entry) => ({ ...entry.buyer, verificationDocuments: entry.docs }));
+  } else {
+    const qbBuyer = this.globalBuyerRepository.createQueryBuilder('buyer')
+      .leftJoinAndSelect('buyer.user', 'user')
+      .leftJoinAndSelect('buyer.verificationDocuments', 'documents')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const result = await qbBuyer.getManyAndCount();
+    buyers = result[0];
+    buyersCount = result[1];
   }
 
-  const [buyers, buyersCount] = await qbBuyer.getManyAndCount();
-
   const qbExporter = this.exporterRepository.createQueryBuilder('exporter')
-    .leftJoinAndSelect('exporter.user', 'user')
-    .skip((page - 1) * limit)
-    .take(limit);
+    .leftJoinAndSelect('exporter.user', 'user');
 
   if (status) {
     const statuses = Array.isArray(status) ? status : status.split(',');
     qbExporter.andWhere('exporter.verificationStatus IN (:...statuses)', { statuses });
+    // When status filter is present we'll fetch the full set and apply unified pagination later
+    const [exportersFull] = await qbExporter.getManyAndCount();
+    var exportersList = exportersFull;
+    var exportersCount = exportersList.length;
+  } else {
+    qbExporter.skip((page - 1) * limit).take(limit);
+    const [exporters, exportersCountTemp] = await qbExporter.getManyAndCount();
+    var exportersList = exporters;
+    var exportersCount = exportersCountTemp;
   }
 
-  const [exporters, exportersCount] = await qbExporter.getManyAndCount();
+    const buyerResults = await Promise.all(buyers.map(async (buyer) => {
+    // If verificationDocuments already attached (from status-based lookup), use them; otherwise fetch persisted docs
+    const docs =
+      (buyer.verificationDocuments && buyer.verificationDocuments.length)
+        ? buyer.verificationDocuments
+        : await this.verificationDocRepository.find({ where: { buyer: { id: buyer.id } } });
 
-  // Normalize Buyer docs
-  const buyerResults = buyers.map((buyer) => ({
-    id: buyer.id,
-    type: 'buyer' as const,
-    user: {
-      id: buyer.user.id,
-      email: buyer.user.email,
-      firstName: buyer.user.firstName,
-      lastName: buyer.user.lastName,
-      companyName: buyer.user.companyName,
-      role: buyer.user.role,
-      isVerified: buyer.user.isVerified,
-      isActive: buyer.user.isActive,
-      status: buyer.user.status,
-      phoneNumber: buyer.user.phoneNumber,
-      countryName: buyer.user.countryName,
-    },
-    documents: buyer.verificationDocuments.map((doc) => ({
-      documentType: doc.documentType,
-      fileUrl: doc.fileUrl,
-      status: doc.status,
-      uploadedAt: doc.uploadedAt,
-    })),
-    status: buyer.status, // global buyer status
-    uploadedAt: buyer.createdAt,
-    entityId: buyer.id,
+    return {
+      id: buyer.id,
+      type: 'buyer' as const,
+      user: {
+        id: buyer.user.id,
+        email: buyer.user.email,
+        firstName: buyer.user.firstName,
+        lastName: buyer.user.lastName,
+        companyName: buyer.user.companyName,
+        role: buyer.user.role,
+        isVerified: buyer.user.isVerified,
+        isActive: buyer.user.isActive,
+        status: buyer.user.status,
+        phoneNumber: buyer.user.phoneNumber,
+        countryName: buyer.user.countryName,
+      },
+      documents: docs.map(d => ({ documentType: d.documentType, fileUrl: d.fileUrl, status: d.status, uploadedAt: d.uploadedAt })),
+      status: buyer.status,
+      uploadedAt: buyer.createdAt,
+      entityId: buyer.id,
+    };
   }));
+  
 
   // Normalize Exporter docs by fetching persisted verification documents
-  const exporterResults = await Promise.all(exporters.map(async (exporter) => {
+  const exporterResults = await Promise.all(exportersList.map(async (exporter) => {
     const docs = await this.verificationDocRepository.find({ where: { exporter: { id: exporter.id } } });
     return {
       id: exporter.id,
@@ -539,12 +588,19 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
     };
   }));
 
+  // Combine buyer and exporter results, sort by uploadedAt and apply unified pagination
+  const combined = [...buyerResults, ...exporterResults];
+  combined.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+  const skip = (page - 1) * limit;
+  const paged = combined.slice(skip, skip + limit);
+
   return {
-    data: [...buyerResults, ...exporterResults],
+    data: paged,
     pagination: {
       page,
       limit,
       total: buyersCount + exportersCount,
+      totalPages: Math.ceil((buyersCount + exportersCount) / limit),
     },
   };
 }
@@ -555,7 +611,7 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
     
     // First, let's check if there are ANY buyer documents at all
     const totalBuyerDocs = await this.verificationDocRepository.count();
-    console.log('Total buyer documents in database:', totalBuyerDocs);
+ 
     
     // Get buyer documents (pending verification)
     const buyerDocsQuery = this.verificationDocRepository.createQueryBuilder('doc')
@@ -580,7 +636,7 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
 
     const [buyerDocs, buyerTotal] = await buyerDocsQuery.getManyAndCount();
     
-    console.log('Buyer documents found with status filter:', buyerDocs.length);
+   
     
     // If no docs with status filter, let's try without any filter
     if (buyerDocs.length === 0) {
@@ -604,8 +660,8 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
         .orderBy('doc.uploadedAt', 'DESC');
 
       const [allBuyerDocs] = await allBuyerDocsQuery.getManyAndCount();
-      console.log('All buyer documents (no filter):', allBuyerDocs.length);
-      console.log('Sample buyer docs:', JSON.stringify(allBuyerDocs.slice(0, 2), null, 2));
+     
+    
     }
 
     // Get exporter documents (those with pending verification status)
@@ -677,46 +733,51 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
     };
   }
 
+
   // Approve/Reject buyer verification document
-  async updateBuyerDocumentStatus(documentId: string, status: 'approved' | 'rejected', adminId: string, rejectionReason?: string) {
-    const document = await this.verificationDocRepository.findOne({
-      where: { id: documentId },
-      relations: ['buyer', 'buyer.user']
+  async updateBuyerDocumentStatus(buyerId: string, status: 'approved' | 'rejected', adminId: string, rejectionReason?: string) {
+     const buyer = await this.globalBuyerRepository.findOne({
+      where: { id: buyerId },
+      relations: ['user']
     });
 
-    if (!document) {
-      throw new NotFoundException('Document not found');
+    if (!buyer) {
+      throw new NotFoundException('Buyer not found');
     }
 
-  if (status === 'approved') {
-  // Update document status
-  await this.verificationDocRepository.update(documentId, { status: VerificationStatus.APPROVED });
-      
-      // Check if all documents are approved for this buyer
-      const allBuyerDocs = await this.verificationDocRepository.find({
-        where: { buyer: { id: document.buyer.id } }
+    //
+    // Only two valid outcomes: approved or rejected. Use VerificationStatus enum
+    if (status === VerificationStatus.APPROVED) {
+      // Mirror exporter behavior: mark buyer as approved and record reviewer metadata
+      await this.globalBuyerRepository.update(buyerId, {
+        status: VerificationStatus.APPROVED,
+        reviewerName: adminId,
+        approvedDate: new Date(),
+        reviewNotes: 'Documents approved by admin',
+        verificationTier: VerificationTier.PREMIUM,
       });
-      
-      const allApproved = allBuyerDocs.every(doc => doc.status === 'approved');
-      
-      if (allApproved) {
-        await this.userRepository.update(document.buyer.user.id, { isVerified: true });
-        await this.globalBuyerRepository.update(document.buyer.id, { 
-          verificationTier: VerificationTier.PREMIUM,
-          status: 'approved'
-        });
-      }
-      } else {
-      // Delete the document when rejected so user can upload again
-      await this.verificationDocRepository.delete(documentId);
-      
-      // Update buyer status to allow re-upload
-      await this.globalBuyerRepository.update(document.buyer.id, { 
-        status: 'in_progress' 
+
+      await this.userRepository.update(buyer.user.id, { isVerified: true });
+
+    } else if (status === 'rejected') {
+      // Mirror exporter rejection: mark buyer as rejected and save reviewer notes
+      await this.globalBuyerRepository.update(buyerId, {
+        status: 'rejected',
+        reviewerName: adminId,
+        approvedDate: new Date(),
+        reviewNotes: rejectionReason || 'Documents rejected by admin',
       });
+
+      await this.userRepository.update(buyer.user.id, { isVerified: false });
+
+    } else {
+      // Defensive: if an unexpected status value is passed, reject the operation
+      throw new BadRequestException('Invalid status value. Allowed values are "approved" or "rejected".');
     }
 
-    await this.logAdminAction(adminId, `${status} buyer document (${document.documentType}) for user: ${document.buyer.user.email}${rejectionReason ? ` - Reason: ${rejectionReason}` : ''}`);
+
+
+    await this.logAdminAction(adminId, `${status} buyer document for user: ${buyer.user.email}${rejectionReason ? ` - Reason: ${rejectionReason}` : ''}`);
 
     return { 
       success: true, 
@@ -734,8 +795,8 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
     if (!exporter) {
       throw new NotFoundException('Exporter not found');
     }
-
-    if (status === 'approved') {
+  
+    if (status === VerificationStatus.APPROVED) {
       await this.exporterRepository.update(exporterId, { 
         verificationStatus: VerificationStatus.APPROVED,
         isVerified: true,
@@ -745,15 +806,16 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
       });
       
       await this.userRepository.update(exporter.user.id, { isVerified: true });
-    } else {
-      // Remove persisted verification documents so exporter can re-upload
-      await this.verificationDocRepository.delete({ exporter: { id: exporterId } } as any);
+    }
+    if (status === 'rejected') {
       await this.exporterRepository.update(exporterId, { 
-        verificationStatus: VerificationStatus.REJECTED,
-        verificationReviewedBy: adminId,
-        verificationReviewedAt: new Date(),
-        verificationNotes: rejectionReason || 'Documents rejected by admin'
+      verificationStatus: VerificationStatus.REJECTED,
+      isVerified: false,
+      verificationReviewedBy: adminId,
+      verificationReviewedAt: new Date(),
+      verificationNotes: rejectionReason || 'Documents rejected by admin'
       });
+      await this.userRepository.update(exporter.user.id, { isVerified: false });
     }
 
     await this.logAdminAction(adminId, `${status} exporter verification for user: ${exporter.user.email}${rejectionReason ? ` - Reason: ${rejectionReason}` : ''}`);
@@ -854,8 +916,7 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
       }
     });
     
-    console.log('All buyer documents in DB:', allDocs.length);
-    console.log('Documents:', JSON.stringify(allDocs, null, 2));
+  
     
     return allDocs;
   }
@@ -896,8 +957,7 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
       return { exporter: safeExporter, documents: docs };
     }));
 
-    console.log('All exporters in DB:', allExporters.length);
-    console.log('Exporters with docs sample:', JSON.stringify(withDocs.slice(0, 5), null, 2));
+
 
     return withDocs;
   }

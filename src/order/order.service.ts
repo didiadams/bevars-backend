@@ -3,6 +3,8 @@ import { OrderRepository } from './repositories/order.repository';
 import { Order, OrderStatus, OrderType } from './entities/order.entity';
 import { OfferService } from '../offer/offer.service';
 import { Offer, OfferStatus } from '../offer/entities/offer.entity';
+import { ExporterService } from '../exporter/exporter.service';
+import { GlobalBuyerService } from '../global-buyer/global-buyer.service';
 
 @Injectable()
 export class OrderService {
@@ -10,6 +12,10 @@ export class OrderService {
     private readonly orderRepository: OrderRepository,
     @Inject(forwardRef(() => OfferService))
     private readonly offerService: OfferService,
+    @Inject(forwardRef(() => ExporterService))
+    private readonly exporterService: ExporterService,
+    @Inject(forwardRef(() => GlobalBuyerService))
+    private readonly globalBuyerService: GlobalBuyerService,
   ) {}
 
   async createFromOffer(offer: Offer): Promise<Order> {
@@ -252,10 +258,14 @@ export class OrderService {
   }
 
   async getOrderStatistics(userId: string, isExporter = false): Promise<any> {
+    // `userId` is the authenticated User.id. We need to resolve it to the
+    // corresponding Exporter.id or GlobalBuyer.id before calling the repository.
     if (isExporter) {
-      return this.orderRepository.getOrderStatistics(userId);
+      const exporter = await this.exporterService.findByUserId(userId);
+      return this.orderRepository.getOrderStatistics(exporter.id);
     } else {
-      return this.orderRepository.getOrderStatistics(undefined, userId);
+      const buyer = await this.globalBuyerService.findByUserId(userId);
+      return this.orderRepository.getOrderStatistics(undefined, buyer.id);
     }
   }
 }

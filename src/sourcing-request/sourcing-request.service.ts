@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject } from '@nestjs/common';
-import { Repository, FindManyOptions, Between, In, DataSource } from 'typeorm';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, HttpException, HttpStatus } from '@nestjs/common';
+import { Repository, FindManyOptions, Between, In, DataSource, DeepPartial } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { SourcingRequest, RequestStatus, UrgencyLevel, QualityStandards } from './entities/sourcing-request.entity';
 
@@ -164,6 +164,23 @@ export class SourcingRequestService {
   }
 
   async create(createDto: any): Promise<SourcingRequest> {
+    // Business rule: disallow creating another sourcing request if the buyer already
+    // has a pending/active sourcing request. This prevents multiple open requests.
+    const existingActive = await this.sourcingRequestRepository.count({
+      where: {
+        globalBuyerId: createDto.globalBuyerId,
+        status: RequestStatus.ACTIVE,
+      },
+    });
+
+    if (existingActive >= 1) {
+      // 409 Conflict indicates the request cannot be completed due to current state
+      throw new HttpException(
+        { message: 'You already have a pending sourcing request', errorCode: 'ACTIVE_REQUEST_EXISTS' },
+        HttpStatus.CONFLICT,
+      );
+    }
+
     const request = this.sourcingRequestRepository.create({
       ...createDto,
       status: RequestStatus.ACTIVE,
@@ -172,7 +189,19 @@ export class SourcingRequestService {
       updatedAt: new Date(),
     });
 
-    return await this.sourcingRequestRepository.save(request) as any as SourcingRequest;
+    try {
+      const saved = await this.sourcingRequestRepository.save(request as DeepPartial<SourcingRequest>);
+      return saved as SourcingRequest;
+    } catch (err: any) {
+      // Handle unique constraint violation (e.g., concurrent create) - Postgres code 23505
+      if (err?.code === '23505') {
+        throw new HttpException(
+          { message: 'You already have a pending sourcing request', errorCode: 'ACTIVE_REQUEST_EXISTS' },
+          HttpStatus.CONFLICT,
+        );
+      }
+      throw err;
+    }
   }
 
   async update(id: string, updateDto: any, userId: string): Promise<SourcingRequest> {
@@ -183,10 +212,27 @@ export class SourcingRequestService {
       throw new ForbiddenException('You can only update your own sourcing requests');
     }
 
-    Object.assign(request, updateDto);
-    request.updatedAt = new Date();
+    // Prevent changing productName or currency once offers exist
+    if ((request.offerCount || 0) > 0) {
+      if (updateDto.productName && updateDto.productName !== request.productName) {
+        throw new HttpException(
+          { message: 'Cannot change product name after offers have been made', errorCode: 'CANNOT_CHANGE_PRODUCT_NAME' },
+          HttpStatus.CONFLICT,
+        );
+      }
+      if (updateDto.currency && updateDto.currency !== request.currency) {
+        throw new HttpException(
+          { message: 'Cannot change currency after offers have been made', errorCode: 'CANNOT_CHANGE_CURRENCY' },
+          HttpStatus.CONFLICT,
+        );
+      }
+    }
 
-    return await this.sourcingRequestRepository.save(request) as any as SourcingRequest;
+  Object.assign(request, updateDto);
+  request.updatedAt = new Date();
+
+    const updated = await this.sourcingRequestRepository.save(request as DeepPartial<SourcingRequest>);
+    return updated as SourcingRequest;
   }
 
   async remove(id: string, userId: string): Promise<void> {
@@ -211,7 +257,8 @@ export class SourcingRequestService {
     request.status = RequestStatus.CLOSED;
     request.updatedAt = new Date();
 
-    return await this.sourcingRequestRepository.save(request) as any as SourcingRequest;
+    const closed = await this.sourcingRequestRepository.save(request as DeepPartial<SourcingRequest>);
+    return closed as SourcingRequest;
   }
 
   async extendDeadline(
