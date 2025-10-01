@@ -72,6 +72,19 @@ app.enableCors({
         target: false,
         value: true,
       },
+      exceptionFactory: (errors) => {
+        // Format validation errors to a consistent shape
+        const formatted = errors.map((err) => ({
+          field: err.property,
+          errors: Object.values(err.constraints ?? {}),
+          value: err.value,
+        }));
+        return new (require('@nestjs/common').BadRequestException)({
+          statusCode: 400,
+            message: 'Validation failed',
+            errors: formatted,
+        });
+      },
     }),
   );
 

@@ -35,7 +35,8 @@ export class OrderController {
       throw new ForbiddenException('You do not have access to this order');
     }
 
-    return order;
+    // Return enriched version for consistency
+    return this.orderService.findOneWithDerived(order.id, req.user.id);
   }
 
   @Patch(':orderId/cancel')
@@ -205,7 +206,7 @@ export class OrderController {
 
   @Get(':orderId')
   async getOrder(@Param('orderId') orderId: string, @Request() req) {
-    return this.orderService.findOne(orderId, req.user.id);
+    return this.orderService.findOneWithDerived(orderId, req.user.id);
   }
 
   @Get('number/:orderNumber')

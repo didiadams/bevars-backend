@@ -29,6 +29,7 @@ export enum PaymentTerms {
   NET_30 = 'net_30',
   NET_60 = 'net_60',
   NET_90 = 'net_90',
+  DOCUMENTARY_COLLECTION = 'documentary_collection',
 }
 
 @Entity('offer')

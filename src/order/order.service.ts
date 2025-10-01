@@ -503,12 +503,18 @@ export class OrderService {
     const isBuyer = order.globalBuyer?.userId === userId;
     if (!isBuyer) throw new ForbiddenException('Only buyer can reject');
     if (!order.awaitingApprovalFor) throw new BadRequestException('No pending approval for this order');
-
-    // Mark disputed and save the reason
+    // Preserve the status prior to dispute so a later withdrawal restores the correct stage
+    if (!order.previousStatus) {
+      order.previousStatus = order.status;
+    }
+    // Mark disputed and save a structured note (UI can parse tags in square brackets)
+    const ts = new Date().toISOString();
     order.status = OrderStatus.DISPUTED;
-    order.notes = (order.notes || '') + `\n[approval_rejection] ${reason || 'Rejected by buyer'} `;
+    order.notes = (order.notes || '') + `\n[dispute_opened_by_buyer_rejection] at=${ts} target=${order.awaitingApprovalFor} reason="${(reason || 'Rejected by buyer').replace(/"/g, '\"')}"`;
     order.awaitingApprovalFor = null;
     order.awaitingApprovalAt = null;
+    // Record opener so exporter cannot withdraw buyer-initiated dispute
+    order.disputeOpenedBy = userId;
 
     return this.orderRepository.save(order);
   }
@@ -578,7 +584,9 @@ export class OrderService {
   order.disputeOpenedBy = null;
 
   const now2 = new Date();
-  order.notes = (order.notes || '') + `\n[dispute_withdrawn] by=${userId} at=${now2.toISOString()}`;
+  // Provide clearer audit + guidance messaging
+  const actor = isBuyer ? 'buyer' : (isExporter ? 'exporter' : 'party');
+  order.notes = (order.notes || '') + `\n[dispute_withdrawn] by=${userId} role=${actor} at=${now2.toISOString()} restored=${order.status}`;
 
     return this.orderRepository.save(order);
   }
@@ -754,6 +762,45 @@ export class OrderService {
     }
 
     return order;
+  }
+
+  /**
+   * Enriched order payload with derived dispute metadata for frontend convenience.
+   * Does NOT persist anything – purely computed fields.
+   */
+  async findOneWithDerived(id: string, userId: string): Promise<any> {
+    const order = await this.findOne(id, userId);
+    const notes = order.notes || '';
+    // Determine dispute source from structured markers
+    let disputeSource: 'buyer_rejection' | 'manual' | null = null;
+    if (notes.includes('[dispute_opened_by_buyer_rejection]')) {
+      disputeSource = 'buyer_rejection';
+    } else if (order.status === OrderStatus.DISPUTED) {
+      // Generic dispute marker inserted via openDispute
+      if (notes.includes('[dispute]')) disputeSource = 'manual';
+    }
+    const userIsBuyer = order.globalBuyer?.userId === userId;
+    const userIsExporter = order.exporter?.userId === userId;
+    let canWithdrawDispute = false;
+    if (order.status === OrderStatus.DISPUTED) {
+      if (order.disputeOpenedBy) {
+        // Only opener may withdraw unless opener is buyer (policy: exporter cannot withdraw buyer dispute)
+        if (order.disputeOpenedBy === userId) {
+          canWithdrawDispute = true;
+        } else if (userIsBuyer && order.disputeOpenedBy === order.globalBuyer?.userId) {
+          // Buyer always can withdraw their own dispute
+          canWithdrawDispute = true;
+        }
+      } else {
+        // Fallback: allow buyer to withdraw if no opener recorded
+        if (userIsBuyer) canWithdrawDispute = true;
+      }
+    }
+    return {
+      ...order,
+      disputeSource,
+      canWithdrawDispute,
+    };
   }
 
   async findByOfferId(offerId: string): Promise<Order | null> {

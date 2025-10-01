@@ -7,7 +7,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 
-@Catch() // Remove HttpException to catch all exceptions
+@Catch() // Global catch-all
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
@@ -17,26 +17,54 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const response = ctx.getResponse();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
-    let message = 'Internal server error';
+    let responsePayload: any = {
+      statusCode: status,
+      message: 'Internal server error',
+    };
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
-      message = exception.message;
+      const exResponse = exception.getResponse();
+      // Default HttpException response shape can be a string or object
+      if (typeof exResponse === 'string') {
+        responsePayload = { statusCode: status, message: exResponse };
+      } else if (typeof exResponse === 'object' && exResponse !== null) {
+        // Preserve provided structure (e.g. { message: string | string[], error: string })
+        const { message, error, ...rest } = exResponse as Record<string, any>;
+        responsePayload = {
+          statusCode: status,
+          message: message ?? error ?? exception.message,
+          error: error,
+          ...rest,
+        };
+      } else {
+        responsePayload = { statusCode: status, message: exception.message };
+      }
     }
 
-    // Log the raw exception to see exactly what's happening
-    this.logger.error(`Raw exception:`, exception);
+    // Attach common metadata
+    responsePayload = {
+      ...responsePayload,
+      path: request.url,
+      method: request.method,
+      timestamp: new Date().toISOString(),
+      success: false,
+    };
 
+    // Improve visibility for validation errors (message can be array)
+    if (Array.isArray(responsePayload.message)) {
+      responsePayload.errors = responsePayload.message; // alias for frontend clarity
+    }
+
+    // Structured logging
     this.logger.error(
-      `HTTP Status: ${status} | Error Message: ${message}`,
+      `HTTP Status: ${status} | Path: ${request.method} ${request.url} | Message: ${JSON.stringify(responsePayload.message)}`,
       exception instanceof Error ? exception.stack : undefined,
     );
 
-    response.status(status).json({
-      statusCode: status,
-      message: message,
-      path: request.url,
-      timestamp: new Date().toISOString(),
-    });
+    // Optionally log raw exception for internal diagnostics (keep separate line)
+    this.logger.debug('Raw exception object:', (exception as any));
+
+    response.status(status).json(responsePayload);
   }
 }
