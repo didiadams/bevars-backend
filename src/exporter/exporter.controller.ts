@@ -77,7 +77,30 @@ export class ExporterController {
     @UploadedFile() file: Express.Multer.File,
     @Request() req
   ) {
-    const exporter = await this.exporterService.findByUserId(req.user.id);
+    let exporter;
+    try {
+      exporter = await this.exporterService.findByUserId(req.user.id);
+    } catch (err) {
+      // If exporter record doesn't exist, create a minimal one so uploads can proceed.
+      // This avoids failing uploads for users who haven't completed their profile yet.
+      console.info(`[ExporterController] No exporter profile for user ${req.user.id}, creating minimal exporter record`);
+      const minimalDto = {
+        companyName: req.user.companyName || `Exporter ${req.user.id.slice(0, 8)}`,
+        companyRegistrationNumber: `auto-${req.user.id.slice(0, 8)}`,
+        businessAddress: req.user.businessAddress || '',
+        businessEmail: req.user.email || '',
+        businessPhone: req.user.phoneNumber || '',
+        contactPersonName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || req.user.email || 'Unknown',
+        contactPersonTitle: '',
+        contactPersonEmail: req.user.email || '',
+        contactPersonPhone: req.user.phoneNumber || '',
+        productCategories: [],
+        exportDestinations: [],
+        userId: req.user.id,
+      };
+      exporter = await this.exporterService.create(minimalDto as any);
+    }
+
     return this.exporterService.uploadVerificationDocument(exporter.id, documentType, file);
   }
 

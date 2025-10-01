@@ -7,10 +7,12 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { OrderDocument } from './order-document.entity';
 
 export enum OrderStatus {
   PENDING = 'pending',
@@ -23,6 +25,7 @@ export enum OrderStatus {
   CANCELLED = 'cancelled',
   DISPUTED = 'disputed',
 }
+
 
 export enum OrderType {
   DIRECT_PURCHASE = 'direct_purchase',
@@ -116,9 +119,45 @@ export class Order {
   @Column({ type: 'date', nullable: true })
   cancelledAt: Date;
 
+  // Approval workflow: which status the order is awaiting buyer approval for
+  @Column({ type: 'enum', enum: OrderStatus, nullable: true })
+  awaitingApprovalFor: OrderStatus;
+
+  // When the approval was requested (used for auto-complete after timeout)
+  @Column({ type: 'timestamp', nullable: true })
+  awaitingApprovalAt: Date;
+
+  // Keep the previous status when order enters a dispute so it can be restored
+  // if the dispute is withdrawn or resolved in favor of continuing the order.
+  @Column({ type: 'enum', enum: OrderStatus, nullable: true })
+  previousStatus: OrderStatus;
+
+  // When the dispute should be escalated to Bevars mediation team if no
+  // action is taken by buyer/exporter before this timestamp.
+  @Column({ type: 'timestamp', nullable: true })
+  disputeEscalationAt: Date;
+
+  // Optional mediation assignment (user id of Bevars mediator)
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  mediationAssignedTo: string;
+
+  // The user id who opened the current dispute (if any)
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  disputeOpenedBy: string;
+
+  // When dispute was resolved, outcome note (e.g., 'buyer_accepted', 'exporter_accepted', 'cancelled', 'refund')
+  @Column({ type: 'text', nullable: true })
+  disputeResolutionOutcome: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  disputeResolvedAt: Date;
+
   @CreateDateColumn()
   createdAt: Date;
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  @OneToMany(() => OrderDocument, (d) => d.order)
+  documents: OrderDocument[];
 }

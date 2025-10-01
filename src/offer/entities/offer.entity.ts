@@ -24,6 +24,7 @@ export enum PaymentTerms {
   PAYMENT_ON_DELIVERY = 'payment_on_delivery',
   LETTER_OF_CREDIT = 'letter_of_credit',
   TELEGRAPHIC_TRANSFER = 'telegraphic_transfer',
+  OPEN_ACCOUNT = 'open_account',
   ESCROW = 'escrow',
   NET_30 = 'net_30',
   NET_60 = 'net_60',
