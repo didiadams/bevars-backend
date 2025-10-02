@@ -40,7 +40,7 @@ const getEntityPath = () =>
 const getMigrationPath = () =>
   isDevelopment
     ? [path.join(__dirname, 'src/migrations/*.ts')]
-    : [path.join(__dirname, 'dist/migrations/*.js')];
+    : [path.join(__dirname, 'migrations/*.js')];
 
 // Mirror the runtime DB options from src/database/database.config.ts so the CLI uses
 // the same pooling/timeout/migration settings. This prevents migration runner from
