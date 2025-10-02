@@ -24,7 +24,7 @@
     "migration:run": "npx ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:run -d ormconfig.ts",
     "migration:show": "npx ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:show -d ormconfig.ts",
     "migration:revert": "npx ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:revert -d ormconfig.ts",
-    "migration:run:prod": "npx typeorm migration:run -d dist/ormconfig.js",
+    "migration:run:prod": "npx typeorm migration:run -d ormconfig.js",
     "migration:show:prod": "npx typeorm migration:show -d dist/ormconfig.js",
     "migration:revert:prod": "npx typeorm migration:revert -d dist/ormconfig.js"
   },
