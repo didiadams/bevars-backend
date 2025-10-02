@@ -36,13 +36,13 @@ const dbConfig = getDatabaseConfig();
 // --- Entity & Migration paths ---
 const getEntityPath = () =>
   isDevelopment
-    ? [path.resolve(__dirname, '../src/**/*.entity.ts')]
-    : [path.resolve(__dirname, './**/*.entity.js')];
+    ? [path.join(__dirname, 'src/**/*.entity.ts')]
+    : [path.join(__dirname, 'src/**/*.entity.js')];
 
 const getMigrations = () =>
   isDevelopment
-    ? [path.resolve(__dirname, '../src/migrations/*.ts')]
-    : [path.resolve(__dirname, './migrations/*.js')];
+    ? [path.join(__dirname, 'src/migrations/*.ts')]
+    : [path.join(__dirname, 'src/migrations/*.js')];
 
 // --- Data Source ---
 export const AppDataSource = new DataSource({
