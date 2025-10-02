@@ -35,7 +35,7 @@ const dbConfig = getDatabaseUrl();
 const getEntityPath = () =>
   isDevelopment
     ? [path.join(__dirname, 'src/**/*.entity.ts')]
-    : [path.join(__dirname, 'src/**/*.entity.js')];
+    : [path.join(__dirname, 'dist/src/**/*.entity.js')];
 
 const getMigrationPath = () =>
   isDevelopment
