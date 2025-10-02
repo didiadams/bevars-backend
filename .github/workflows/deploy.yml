@@ -58,9 +58,9 @@ jobs:
             echo "🔍 Checking backend status..."
             pm2 status bevars-backend --no-daemon
 
-            # Get recent logs with timeout (prevent hanging)
+            # Get recent logs (non-streaming)
             echo "📋 Recent logs:"
-            timeout 10 pm2 logs bevars-backend --lines 3 --no-daemon || echo "Log retrieval timed out"
+            pm2 logs bevars-backend --lines 3 --raw --nostream 2>/dev/null || echo "Log retrieval skipped"
 
             # Wait for app to start and check PM2 status
             echo "🩺 Waiting for application to start..."
