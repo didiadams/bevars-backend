@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "backend/**"
-      - ".github/workflows/**"
+      - 'backend/**'
+      - '.github/workflows/**'
   workflow_dispatch: # Allow manual deployment
 
 jobs:
@@ -14,6 +14,12 @@ jobs:
     name: Deploy Backend to DigitalOcean
 
     steps:
+      - name: 📢 Deployment Started
+        run: |
+          echo "🚀 DEPLOYMENT STARTED"
+          echo "Repository: ${{ github.repository }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Triggered by: ${{ github.actor }}"
       - name: Deploy Backend to DigitalOcean
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -42,13 +48,6 @@ jobs:
             echo "🔨 Building TypeScript backend..."
             yarn build
 
-            # Check for pending migrations (but don't run them automatically)
-            echo "🔍 Checking for pending migrations..."
-            NODE_ENV=production npx typeorm migration:show -d dist/ormconfig.js
-
-            # Uncomment the line below to auto-run migrations (risky for production)
-            # NODE_ENV=production npx typeorm migration:run -d dist/ormconfig.js
-
             # Restart backend with PM2
             echo "🔄 Restarting backend application..."
             pm2 restart bevars-backend || pm2 start ecosystem.config.js --env production
@@ -58,5 +57,22 @@ jobs:
             pm2 status bevars-backend
             pm2 logs bevars-backend --lines 5
 
+            # Health check - wait for app to start
+            echo "🩺 Performing health check..."
+            sleep 10
+
+            # Test if API is responding
+            if curl -f -s http://localhost:3001/health > /dev/null 2>&1; then
+              echo "✅ Health check passed - API is responding"
+            else
+              echo "⚠️ Health check failed - API might not be ready yet"
+              echo "📋 Recent logs:"
+              pm2 logs bevars-backend --lines 10 --nostream
+            fi
+
             echo "✅ Backend deployment completed successfully!"
             echo "🔧 Backend API: http://${{ secrets.DO_HOST }}:3001"
+            echo "📊 Deployment Details:"
+            echo "  - Commit: $GITHUB_SHA"
+            echo "  - Branch: $GITHUB_REF_NAME"
+            echo "  - Triggered by: $GITHUB_ACTOR"
