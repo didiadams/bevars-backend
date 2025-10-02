@@ -37,10 +37,25 @@ const getEntityPath = () =>
     ? [path.join(__dirname, 'src/**/*.entity.ts')]
     : [path.join(__dirname, 'src/**/*.entity.js')];
 
-const getMigrationPath = () =>
-  isDevelopment
-    ? [path.join(__dirname, 'src/migrations/*.ts')]
-    : [path.join(__dirname, 'src/migrations/*.js')];
+const getMigrationPath = () => {
+  if (isDevelopment) {
+    return [path.join(__dirname, 'src/migrations/*.ts')];
+  } else {
+    // Explicitly list all migration files for production
+    return [
+      path.join(__dirname, 'src/migrations/1695859200000-AddUniqueActiveRequestPerBuyer.js'),
+      path.join(__dirname, 'src/migrations/20250930-AddOpenAccountToPaymentTerms.js'),
+      path.join(__dirname, 'src/migrations/1758246408501-InitiateSchema.js'),
+      path.join(__dirname, 'src/migrations/1759041760135-OrderEnityDocument.js'),
+      path.join(__dirname, 'src/migrations/1759047597192-PurchaseOrder.js'),
+      path.join(__dirname, 'src/migrations/1759227105975-ApprovalColumnOrder.js'),
+      path.join(__dirname, 'src/migrations/1759258363213-DisputeTable.js'),
+      path.join(__dirname, 'src/migrations/1759266136713-AddDisputeColumn.js'),
+      path.join(__dirname, 'src/migrations/1759291446523-AddDocumentCollection.js'),
+      path.join(__dirname, 'src/migrations/1759301000000-AddUniqueOrderDocumentConstraint.js')
+    ];
+  }
+};
 
 // Mirror the runtime DB options from src/database/database.config.ts so the CLI uses
 // the same pooling/timeout/migration settings. This prevents migration runner from
