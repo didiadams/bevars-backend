@@ -73,7 +73,7 @@ jobs:
             else
               echo "❌ PM2 process not found"
             fi
-            
+
             echo "✅ Backend deployment completed successfully!"
             echo "🔧 Backend API: http://${{ secrets.DO_HOST }}:3001"
             echo "📊 Deployment Details:"
