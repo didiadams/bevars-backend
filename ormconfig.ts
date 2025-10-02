@@ -43,7 +43,8 @@ const getMigrations = () => {
   } else {
     // Dynamically load all migration classes from the dist folder
     const fs = require('fs');
-    const migrationDir = path.join(__dirname, 'src/migrations');
+    // FIX: Changed from 'src/migrations' to 'migrations' 
+    const migrationDir = path.join(__dirname, 'migrations');
     
     try {
       if (!fs.existsSync(migrationDir)) {
