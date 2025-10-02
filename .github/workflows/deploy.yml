@@ -60,7 +60,7 @@ jobs:
             # Wait for app to start and check PM2 status
             echo "🩺 Waiting for application to start..."
             sleep 5
-            
+
             # Check if PM2 process is running (more reliable than HTTP check)
             if pm2 describe bevars-backend > /dev/null 2>&1; then
               PM2_STATUS=$(pm2 jlist | jq -r '.[] | select(.name=="bevars-backend") | .pm2_env.status' 2>/dev/null || echo "unknown")
@@ -72,7 +72,9 @@ jobs:
               fi
             else
               echo "❌ PM2 process not found"
-            fi            echo "✅ Backend deployment completed successfully!"
+            fi
+            
+            echo "✅ Backend deployment completed successfully!"
             echo "🔧 Backend API: http://${{ secrets.DO_HOST }}:3001"
             echo "📊 Deployment Details:"
             echo "  - Commit: $GITHUB_SHA"
