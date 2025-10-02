@@ -974,8 +974,16 @@ export class OrderService {
       const exporter = await this.exporterService.findByUserId(userId);
       return this.orderRepository.getOrderStatistics(exporter.id);
     } else {
-      const buyer = await this.globalBuyerService.findByUserId(userId);
-      return this.orderRepository.getOrderStatistics(undefined, buyer.id);
+      try {
+        const buyer = await this.globalBuyerService.findByUserId(userId);
+        return this.orderRepository.getOrderStatistics(undefined, buyer.id);
+      } catch (err) {
+        // Graceful fallback if buyer profile isn't created yet.
+        if (err?.status === 404) {
+          return { total: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0, missingProfile: true };
+        }
+        throw err;
+      }
     }
   }
 
