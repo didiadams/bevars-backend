@@ -4,32 +4,86 @@ export class InitiateSchema1758246408501 implements MigrationInterface {
     name = 'InitiateSchema1758246408501'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`CREATE TYPE "public"."offer_paymentterms_enum" AS ENUM('advance_payment', 'payment_on_delivery', 'letter_of_credit', 'telegraphic_transfer', 'escrow', 'net_30', 'net_60', 'net_90')`);
-        await queryRunner.query(`CREATE TYPE "public"."offer_status_enum" AS ENUM('pending', 'accepted', 'rejected', 'withdrawn', 'expired', 'under_negotiation')`);
+        // Create all enums with IF NOT EXISTS check
+        await queryRunner.query(`
+            DO $$ 
+            BEGIN
+                -- offer_paymentterms_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'offer_paymentterms_enum') THEN
+                    CREATE TYPE "public"."offer_paymentterms_enum" AS ENUM('advance_payment', 'payment_on_delivery', 'letter_of_credit', 'telegraphic_transfer', 'escrow', 'net_30', 'net_60', 'net_90');
+                END IF;
+                -- offer_status_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'offer_status_enum') THEN
+                    CREATE TYPE "public"."offer_status_enum" AS ENUM('pending', 'accepted', 'rejected', 'withdrawn', 'expired', 'under_negotiation');
+                END IF;
+                -- verification_document_status_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'verification_document_status_enum') THEN
+                    CREATE TYPE "public"."verification_document_status_enum" AS ENUM('pending', 'under_review', 'approved', 'rejected');
+                END IF;
+                -- exporter_verificationstatus_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'exporter_verificationstatus_enum') THEN
+                    CREATE TYPE "public"."exporter_verificationstatus_enum" AS ENUM('pending', 'under_review', 'approved', 'rejected');
+                END IF;
+                -- user_role_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role_enum') THEN
+                    CREATE TYPE "public"."user_role_enum" AS ENUM('global_buyer', 'exporter', 'admin');
+                END IF;
+                -- user_status_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_status_enum') THEN
+                    CREATE TYPE "public"."user_status_enum" AS ENUM('active', 'inactive', 'suspended', 'blocked');
+                END IF;
+                -- global_buyer_verificationtier_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'global_buyer_verificationtier_enum') THEN
+                    CREATE TYPE "public"."global_buyer_verificationtier_enum" AS ENUM('standard', 'premium', 'enterprise');
+                END IF;
+                -- global_buyer_buyertype_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'global_buyer_buyertype_enum') THEN
+                    CREATE TYPE "public"."global_buyer_buyertype_enum" AS ENUM('retailer', 'wholesaler', 'distributor', 'processor', 'restaurant_chain', 'supermarket_chain', 'trading_company', 'government_entity', 'non_profit', 'individual');
+                END IF;
+                -- global_buyer_preferredpaymentmethod_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'global_buyer_preferredpaymentmethod_enum') THEN
+                    CREATE TYPE "public"."global_buyer_preferredpaymentmethod_enum" AS ENUM('letter_of_credit', 'telegraphic_transfer', 'escrow', 'cash_on_delivery', 'advance_payment', 'documentary_collection');
+                END IF;
+                -- sourcing_request_preferredincoterms_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'sourcing_request_preferredincoterms_enum') THEN
+                    CREATE TYPE "public"."sourcing_request_preferredincoterms_enum" AS ENUM('exw', 'fca', 'cpt', 'cip', 'dap', 'dpu', 'ddp', 'fas', 'fob', 'cfr', 'cif');
+                END IF;
+                -- sourcing_request_status_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'sourcing_request_status_enum') THEN
+                    CREATE TYPE "public"."sourcing_request_status_enum" AS ENUM('active', 'closed', 'draft', 'expired');
+                END IF;
+                -- sourcing_request_urgencylevel_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'sourcing_request_urgencylevel_enum') THEN
+                    CREATE TYPE "public"."sourcing_request_urgencylevel_enum" AS ENUM('low', 'medium', 'high', 'urgent');
+                END IF;
+                -- order_status_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status_enum') THEN
+                    CREATE TYPE "public"."order_status_enum" AS ENUM('pending', 'confirmed', 'in_production', 'ready_for_shipment', 'shipped', 'delivered', 'completed', 'cancelled', 'disputed');
+                END IF;
+                -- order_type_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_type_enum') THEN
+                    CREATE TYPE "public"."order_type_enum" AS ENUM('direct_purchase', 'negotiated_deal', 'contract_farming');
+                END IF;
+                -- email_logs_status_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'email_logs_status_enum') THEN
+                    CREATE TYPE "public"."email_logs_status_enum" AS ENUM('queued', 'sent', 'failed');
+                END IF;
+                -- chat_status_enum
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'chat_status_enum') THEN
+                    CREATE TYPE "public"."chat_status_enum" AS ENUM('active', 'archived', 'closed');
+                END IF;
+            END$$;
+        `);
         await queryRunner.query(`CREATE TABLE "offer" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "sourcingRequestId" uuid NOT NULL, "exporterId" uuid NOT NULL, "pricePerUnit" numeric(15,2) NOT NULL, "totalPrice" numeric(15,2) NOT NULL, "currency" character varying NOT NULL, "availableQuantity" numeric(10,2) NOT NULL, "minimumOrderQuantity" numeric(10,2), "leadTime" integer, "estimatedDeliveryDate" date, "paymentTerms" "public"."offer_paymentterms_enum" NOT NULL, "qualityAssurance" text, "productSpecifications" text, "packagingDetails" text, "shippingDetails" text, "shippingCost" numeric(15,2), "insuranceDetails" text, "certifications" text, "status" "public"."offer_status_enum" NOT NULL DEFAULT 'pending', "validUntil" date, "additionalNotes" text, "termsAndConditions" text, "attachments" text, "rejectionReason" text, "negotiationNotes" character varying, "isCounterOffer" boolean NOT NULL DEFAULT false, "originalOfferId" character varying, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_57c6ae1abe49201919ef68de900" PRIMARY KEY ("id")); COMMENT ON COLUMN "offer"."attachments" IS 'Attachment URLs for product samples, certifications, etc.'`);
-        await queryRunner.query(`CREATE TYPE "public"."verification_document_status_enum" AS ENUM('pending', 'under_review', 'approved', 'rejected')`);
         await queryRunner.query(`CREATE TABLE "verification_document" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "ownerId" character varying, "documentType" character varying NOT NULL, "fileUrl" character varying NOT NULL, "fileName" character varying, "mimeType" character varying, "fileSize" integer, "status" "public"."verification_document_status_enum" NOT NULL DEFAULT 'pending', "uploadedBy" character varying, "reviewedBy" character varying, "reviewNotes" text, "metadata" json, "uploadedAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), "exporterId" uuid, "buyerId" uuid, CONSTRAINT "PK_11c3a682fe2bdd7105895270995" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE INDEX "IDX_9d4b0810784677848e22325db1" ON "verification_document" ("status") `);
-        await queryRunner.query(`CREATE TYPE "public"."exporter_verificationstatus_enum" AS ENUM('pending', 'under_review', 'approved', 'rejected')`);
         await queryRunner.query(`CREATE TABLE "exporter" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "userId" uuid, "companyRegistrationNumber" character varying, "businessLicenseNumber" character varying, "taxIdentificationNumber" character varying, "verificationStatus" "public"."exporter_verificationstatus_enum" NOT NULL DEFAULT 'pending', "isVerified" boolean NOT NULL DEFAULT false, "verificationReviewedBy" character varying, "verificationReviewedAt" TIMESTAMP, "verificationNotes" character varying, "productCategories" text, "businessDescription" character varying, "yearsInBusiness" integer, "exportCapacityPerMonth" integer, "minimumOrderQuantity" integer, "exportDestinations" text, "averageRating" numeric(5,2) NOT NULL DEFAULT '0', "completedOrders" integer NOT NULL DEFAULT '0', "totalReviews" integer NOT NULL DEFAULT '0', "positiveReviews" integer NOT NULL DEFAULT '0', "negativeReviews" integer NOT NULL DEFAULT '0', "isActive" boolean NOT NULL DEFAULT true, "isFeatured" boolean NOT NULL DEFAULT false, "primaryCrops" text, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "REL_20ab877f299e8586fceeb681b0" UNIQUE ("userId"), CONSTRAINT "PK_736728ac37b2492c9b161b0df0d" PRIMARY KEY ("id")); COMMENT ON COLUMN "exporter"."productCategories" IS 'Product categories this exporter specializes in'; COMMENT ON COLUMN "exporter"."exportDestinations" IS 'Countries this exporter can ship to'; COMMENT ON COLUMN "exporter"."primaryCrops" IS 'Primary crops selected by exporter for their specialization'`);
-        await queryRunner.query(`CREATE TYPE "public"."user_role_enum" AS ENUM('global_buyer', 'exporter', 'admin')`);
-        await queryRunner.query(`CREATE TYPE "public"."user_status_enum" AS ENUM('active', 'inactive', 'suspended', 'blocked')`);
         await queryRunner.query(`CREATE TABLE "user" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "email" character varying NOT NULL, "password" character varying NOT NULL, "role" "public"."user_role_enum" NOT NULL, "firstName" character varying NOT NULL, "lastName" character varying NOT NULL, "companyName" character varying, "phoneNumber" character varying, "countryName" character varying, "countryCode" character varying, "isVerified" boolean NOT NULL DEFAULT false, "isActive" boolean NOT NULL DEFAULT false, "status" "public"."user_status_enum" NOT NULL DEFAULT 'active', "tokenVersion" integer NOT NULL DEFAULT '0', "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_e12875dfb3b1d92d7d7c5377e22" UNIQUE ("email"), CONSTRAINT "PK_cace4a159ff9f2512dd42373760" PRIMARY KEY ("id"))`);
-        await queryRunner.query(`CREATE TYPE "public"."global_buyer_verificationtier_enum" AS ENUM('standard', 'premium', 'enterprise')`);
-        await queryRunner.query(`CREATE TYPE "public"."global_buyer_buyertype_enum" AS ENUM('retailer', 'wholesaler', 'distributor', 'processor', 'restaurant_chain', 'supermarket_chain', 'trading_company', 'government_entity', 'non_profit', 'individual')`);
-        await queryRunner.query(`CREATE TYPE "public"."global_buyer_preferredpaymentmethod_enum" AS ENUM('letter_of_credit', 'telegraphic_transfer', 'escrow', 'cash_on_delivery', 'advance_payment', 'documentary_collection')`);
         await queryRunner.query(`CREATE TABLE "global_buyer" ("reviewNotes" text, "submittedDate" TIMESTAMP, "approvedDate" TIMESTAMP, "reviewerName" character varying, "creditRating" character varying, "verificationTier" "public"."global_buyer_verificationtier_enum" DEFAULT 'standard', "status" character varying NOT NULL DEFAULT 'not_started', "passportUrl" character varying, "certificateUrl" character varying, "industryCertificationsUrl" character varying, "taxIdUrl" character varying, "businessLicenseUrl" character varying, "photoUrl" character varying, "optionalDoc1Url" character varying, "optionalDoc2Url" character varying, "id" uuid NOT NULL DEFAULT uuid_generate_v4(), "userId" uuid, "buyerType" "public"."global_buyer_buyertype_enum", "businessRegistrationNumber" character varying, "taxIdentificationNumber" character varying, "importLicenseNumber" character varying, "businessDescription" character varying, "website" character varying, "linkedinProfile" character varying, "interestedCategories" text, "operatingCountries" text, "averageOrderValue" numeric(15,2), "preferredPaymentMethod" "public"."global_buyer_preferredpaymentmethod_enum", "creditLimit" integer, "totalOrdersPlaced" integer NOT NULL DEFAULT '0', "totalValueOrdered" numeric(15,2) NOT NULL DEFAULT '0', "averageRating" numeric(5,2) NOT NULL DEFAULT '0', "totalReviews" integer NOT NULL DEFAULT '0', "isActive" boolean NOT NULL DEFAULT true, "isPremium" boolean NOT NULL DEFAULT false, "timezone" character varying, "preferredCommunicationMethod" character varying, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "REL_d698d9030f79a25867c9f97e71" UNIQUE ("userId"), CONSTRAINT "PK_bb1da01fff892634494a95aca04" PRIMARY KEY ("id")); COMMENT ON COLUMN "global_buyer"."interestedCategories" IS 'Product categories this buyer is interested in'; COMMENT ON COLUMN "global_buyer"."operatingCountries" IS 'Countries this buyer operates in or imports to'`);
-        await queryRunner.query(`CREATE TYPE "public"."sourcing_request_preferredincoterms_enum" AS ENUM('exw', 'fca', 'cpt', 'cip', 'dap', 'dpu', 'ddp', 'fas', 'fob', 'cfr', 'cif')`);
-        await queryRunner.query(`CREATE TYPE "public"."sourcing_request_status_enum" AS ENUM('active', 'closed', 'draft', 'expired')`);
-        await queryRunner.query(`CREATE TYPE "public"."sourcing_request_urgencylevel_enum" AS ENUM('low', 'medium', 'high', 'urgent')`);
         await queryRunner.query(`CREATE TABLE "sourcing_request" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "globalBuyerId" uuid NOT NULL, "title" character varying NOT NULL, "description" text NOT NULL, "productName" character varying NOT NULL, "productCategory" character varying, "productVariety" character varying, "quantity" numeric(10,2) NOT NULL, "unit" character varying NOT NULL, "budgetMin" numeric(15,2), "budgetMax" numeric(15,2), "currency" character varying, "deliveryCountry" character varying NOT NULL, "deliveryCity" character varying, "deliveryAddress" character varying, "deliveryPostalCode" character varying, "requiredDeliveryDate" date NOT NULL, "latestDeliveryDate" date, "quotationDeadline" date NOT NULL, "preferredIncoTerms" "public"."sourcing_request_preferredincoterms_enum", "qualityStandards" text, "qualitySpecifications" text, "packagingRequirements" text, "shippingInstructions" text, "status" "public"."sourcing_request_status_enum" NOT NULL DEFAULT 'active', "urgencyLevel" "public"."sourcing_request_urgencylevel_enum" NOT NULL DEFAULT 'medium', "isPublic" boolean NOT NULL DEFAULT false, "invitedExporters" text, "expiresAt" date, "viewCount" integer NOT NULL DEFAULT '0', "offerCount" integer NOT NULL DEFAULT '0', "additionalNotes" text, "attachments" text, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_09b0095b5db9746017153e13205" PRIMARY KEY ("id")); COMMENT ON COLUMN "sourcing_request"."qualityStandards" IS 'Required quality standards and certifications'; COMMENT ON COLUMN "sourcing_request"."invitedExporters" IS 'Invited exporter IDs for private requests'; COMMENT ON COLUMN "sourcing_request"."attachments" IS 'Attachment URLs for product samples, specifications, etc.'`);
         await queryRunner.query(`CREATE TABLE "verification_requirement" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "ownerType" character varying NOT NULL, "documentType" character varying NOT NULL, "label" character varying NOT NULL, "required" boolean NOT NULL DEFAULT true, "displayOrder" integer NOT NULL DEFAULT '0', "allowedMimeTypes" text, "maxFileSizeBytes" bigint, "tiers" json, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_032b78586ef9dd73914c8317570" PRIMARY KEY ("id"))`);
-        await queryRunner.query(`CREATE TYPE "public"."order_status_enum" AS ENUM('pending', 'confirmed', 'in_production', 'ready_for_shipment', 'shipped', 'delivered', 'completed', 'cancelled', 'disputed')`);
-        await queryRunner.query(`CREATE TYPE "public"."order_type_enum" AS ENUM('direct_purchase', 'negotiated_deal', 'contract_farming')`);
         await queryRunner.query(`CREATE TABLE "order" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "offerId" uuid NOT NULL, "globalBuyerId" uuid NOT NULL, "exporterId" uuid NOT NULL, "orderNumber" character varying(50) NOT NULL, "status" "public"."order_status_enum" NOT NULL DEFAULT 'pending', "type" "public"."order_type_enum" NOT NULL DEFAULT 'direct_purchase', "totalAmount" numeric(15,2) NOT NULL, "currency" character varying NOT NULL, "quantity" numeric(10,2) NOT NULL, "unitPrice" numeric(15,2) NOT NULL, "expectedDeliveryDate" date, "actualDeliveryDate" date, "shippingAddress" text, "billingAddress" text, "specialInstructions" text, "notes" text, "attachments" text, "cancellationReason" text, "confirmedAt" date, "shippedAt" date, "deliveredAt" date, "completedAt" date, "cancelledAt" date, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_4e9f8dd16ec084bca97b3262edb" UNIQUE ("orderNumber"), CONSTRAINT "REL_a536e1a65e8d9bf3f5a4cddc3e" UNIQUE ("offerId"), CONSTRAINT "PK_1031171c13130102495201e3e20" PRIMARY KEY ("id"))`);
-        await queryRunner.query(`CREATE TYPE "public"."email_logs_status_enum" AS ENUM('queued', 'sent', 'failed')`);
         await queryRunner.query(`CREATE TABLE "email_logs" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "email" character varying NOT NULL, "subject" character varying NOT NULL, "status" "public"."email_logs_status_enum" NOT NULL DEFAULT 'queued', "jobId" character varying, "messageId" character varying, "metadata" json, "error" character varying, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), "sentAt" TIMESTAMP, "lastAttempt" TIMESTAMP, CONSTRAINT "PK_999382218924e953a790d340571" PRIMARY KEY ("id"))`);
-        await queryRunner.query(`CREATE TYPE "public"."chat_status_enum" AS ENUM('active', 'archived', 'closed')`);
         await queryRunner.query(`CREATE TABLE "chat" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "orderId" uuid NOT NULL, "globalBuyerId" uuid NOT NULL, "exporterId" uuid NOT NULL, "status" "public"."chat_status_enum" NOT NULL DEFAULT 'active', "title" character varying(200), "lastMessageAt" TIMESTAMP, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_9d0b2ba74336710fd31154738a5" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE TABLE "chat_message" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "chatId" uuid NOT NULL, "senderId" uuid, "message" text NOT NULL, "attachments" text, "isRead" boolean NOT NULL DEFAULT false, "readAt" TIMESTAMP, "isSystemMessage" boolean NOT NULL DEFAULT false, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_3cc0d85193aade457d3077dd06b" PRIMARY KEY ("id"))`);
         await queryRunner.query(`ALTER TABLE "offer" ADD CONSTRAINT "FK_0791bd09c2e4cfa75beb0950e18" FOREIGN KEY ("sourcingRequestId") REFERENCES "sourcing_request"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);

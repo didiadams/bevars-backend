@@ -37,23 +37,52 @@ const getEntityPath = () =>
     ? [path.join(__dirname, 'src/**/*.entity.ts')]
     : [path.join(__dirname, 'src/**/*.entity.js')];
 
-const getMigrationPath = () => {
+const getMigrations = () => {
   if (isDevelopment) {
     return [path.join(__dirname, 'src/migrations/*.ts')];
   } else {
-    // Explicitly list all migration files for production
-    return [
-      path.join(__dirname, 'src/migrations/1695859200000-AddUniqueActiveRequestPerBuyer.js'),
-      path.join(__dirname, 'src/migrations/20250930-AddOpenAccountToPaymentTerms.js'),
-      path.join(__dirname, 'src/migrations/1758246408501-InitiateSchema.js'),
-      path.join(__dirname, 'src/migrations/1759041760135-OrderEnityDocument.js'),
-      path.join(__dirname, 'src/migrations/1759047597192-PurchaseOrder.js'),
-      path.join(__dirname, 'src/migrations/1759227105975-ApprovalColumnOrder.js'),
-      path.join(__dirname, 'src/migrations/1759258363213-DisputeTable.js'),
-      path.join(__dirname, 'src/migrations/1759266136713-AddDisputeColumn.js'),
-      path.join(__dirname, 'src/migrations/1759291446523-AddDocumentCollection.js'),
-      path.join(__dirname, 'src/migrations/1759301000000-AddUniqueOrderDocumentConstraint.js')
-    ];
+    // Dynamically load all migration classes from the dist folder
+    const fs = require('fs');
+    const migrationDir = path.join(__dirname, 'src/migrations');
+    
+    try {
+      if (!fs.existsSync(migrationDir)) {
+        console.error(`Migration directory not found: ${migrationDir}`);
+        return [];
+      }
+      
+      const migrationFiles = fs.readdirSync(migrationDir)
+        .filter((file: string) => file.endsWith('.js') && !file.endsWith('.map'))
+        .sort(); // Sort to ensure correct order
+      
+      console.log(`Found ${migrationFiles.length} migration files:`, migrationFiles);
+      
+      const migrations = [];
+      for (const file of migrationFiles) {
+        try {
+          const migrationPath = path.join(migrationDir, file);
+          const migrationModule = require(migrationPath);
+          
+          // Get the migration class from the module
+          const migrationClass = Object.values(migrationModule)[0] as any;
+          if (migrationClass && typeof migrationClass === 'function') {
+            migrations.push(migrationClass);
+            console.log(`✅ Loaded migration: ${migrationClass.name || file}`);
+          } else {
+            console.warn(`⚠️ Could not find migration class in ${file}`);
+          }
+        } catch (error) {
+          console.error(`❌ Error loading migration ${file}:`, error.message);
+        }
+      }
+      
+      console.log(`Successfully loaded ${migrations.length} migrations`);
+      return migrations;
+      
+    } catch (error) {
+      console.error('Error reading migration directory:', error);
+      return [];
+    }
   }
 };
 
@@ -64,7 +93,7 @@ const AppDataSource = new DataSource({
   type: 'postgres',
   ...dbConfig,
   entities: getEntityPath(),
-  migrations: getMigrationPath(),
+  migrations: getMigrations(),
   synchronize: false, // Set to false when using migrations
   logging: isDevelopment,
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
