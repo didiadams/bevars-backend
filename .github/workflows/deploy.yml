@@ -1,0 +1,62 @@
+name: Deploy Backend to DigitalOcean
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/**"
+  workflow_dispatch: # Allow manual deployment
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    name: Deploy Backend to DigitalOcean
+
+    steps:
+      - name: Deploy Backend to DigitalOcean
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USERNAME }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          port: ${{ secrets.DO_PORT }}
+          script: |
+            echo "🚀 Starting Backend Deployment..."
+
+            # Navigate to backend directory
+            cd ~/bevars-exports/backend
+
+            # Set production environment
+            export NODE_ENV=production
+
+            # Pull latest changes
+            echo "� Pulling latest code from GitHub..."
+            git pull origin main
+
+            # Install dependencies
+            echo "📦 Installing/updating dependencies..."
+            yarn install --frozen-lockfile --production=false
+
+            # Build backend
+            echo "🔨 Building TypeScript backend..."
+            yarn build
+
+            # Check for pending migrations (but don't run them automatically)
+            echo "🔍 Checking for pending migrations..."
+            NODE_ENV=production npx typeorm migration:show -d dist/ormconfig.js
+
+            # Uncomment the line below to auto-run migrations (risky for production)
+            # NODE_ENV=production npx typeorm migration:run -d dist/ormconfig.js
+
+            # Restart backend with PM2
+            echo "🔄 Restarting backend application..."
+            pm2 restart bevars-backend || pm2 start ecosystem.config.js --env production
+
+            # Check application status
+            echo "🔍 Checking backend status..."
+            pm2 status bevars-backend
+            pm2 logs bevars-backend --lines 5
+
+            echo "✅ Backend deployment completed successfully!"
+            echo "🔧 Backend API: http://${{ secrets.DO_HOST }}:3001"

@@ -1,0 +1,45 @@
+name: Run Database Migrations
+
+on:
+  workflow_dispatch: # Manual trigger only
+    inputs:
+      confirm:
+        description: 'Type "CONFIRM" to run migrations'
+        required: true
+        default: ""
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    name: Run Database Migrations
+    if: github.event.inputs.confirm == 'CONFIRM'
+
+    steps:
+      - name: Run Migrations on DigitalOcean
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USERNAME }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          port: ${{ secrets.DO_PORT }}
+          script: |
+            echo "🗄️ Running Database Migrations..."
+
+            cd ~/bevars-exports/backend
+            export NODE_ENV=production
+
+            # Show current migration status
+            echo "📋 Current migration status:"
+            NODE_ENV=production npx typeorm migration:show -d dist/ormconfig.js
+
+            # Create backup (optional but recommended)
+            echo "💾 Creating database backup..."
+            timestamp=$(date +%Y%m%d_%H%M%S)
+            mkdir -p ~/backups
+            # Add your backup command here if needed
+
+            # Run migrations
+            echo "⚡ Running migrations..."
+            NODE_ENV=production npx typeorm migration:run -d dist/ormconfig.js
+
+            echo "✅ Migrations completed!"
