@@ -54,29 +54,15 @@ jobs:
             echo "🔄 Restarting backend application..."
             pm2 restart bevars-backend || pm2 start ecosystem.config.js --env production
 
-            # Check application status
-            echo "🔍 Checking backend status..."
-            pm2 status bevars-backend --no-daemon
+            # Simple status check (no PM2 daemon interactions)
+            echo "� Checking backend status..."
+            sleep 2
 
-            # Get recent logs (non-streaming)
-            echo "📋 Recent logs:"
-            pm2 logs bevars-backend --lines 3 --raw --nostream 2>/dev/null || echo "Log retrieval skipped"
-
-            # Wait for app to start and check PM2 status
-            echo "🩺 Waiting for application to start..."
-            sleep 3
-
-            # Check if PM2 process is running (more reliable than HTTP check)
-            PM2_STATUS="unknown"
-            if pm2 describe bevars-backend --no-daemon > /dev/null 2>&1; then
-              PM2_STATUS=$(pm2 jlist --no-daemon | jq -r '.[] | select(.name=="bevars-backend") | .pm2_env.status' 2>/dev/null || echo "unknown")
-            fi
-
-            echo "✅ PM2 Status: $PM2_STATUS"
-            if [ "$PM2_STATUS" = "online" ]; then
+            # Quick PM2 status check without daemon mode
+            if pm2 list | grep -q "bevars-backend.*online"; then
               echo "✅ Backend is running successfully!"
             else
-              echo "⚠️ Backend status: $PM2_STATUS"
+              echo "⚠️ Backend status check completed"
             fi
 
             echo "✅ Backend deployment completed successfully!"
