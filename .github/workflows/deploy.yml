@@ -24,7 +24,7 @@ jobs:
           script: |
             echo "🚀 Starting Backend Deployment..."
 
-            # Navigate to backend directory
+            # Navigate to backend directory (we're already here since workflow is in backend repo)
             cd ~/bevars-exports/backend
 
             # Set production environment
