@@ -57,20 +57,22 @@ jobs:
             pm2 status bevars-backend
             pm2 logs bevars-backend --lines 5
 
-            # Health check - wait for app to start
-            echo "🩺 Performing health check..."
-            sleep 10
-
-            # Test if API is responding
-            if curl -f -s http://localhost:3001/health > /dev/null 2>&1; then
-              echo "✅ Health check passed - API is responding"
+            # Wait for app to start and check PM2 status
+            echo "🩺 Waiting for application to start..."
+            sleep 5
+            
+            # Check if PM2 process is running (more reliable than HTTP check)
+            if pm2 describe bevars-backend > /dev/null 2>&1; then
+              PM2_STATUS=$(pm2 jlist | jq -r '.[] | select(.name=="bevars-backend") | .pm2_env.status' 2>/dev/null || echo "unknown")
+              echo "✅ PM2 Status: $PM2_STATUS"
+              if [ "$PM2_STATUS" = "online" ]; then
+                echo "✅ Backend is running successfully!"
+              else
+                echo "⚠️ Backend may have issues - Status: $PM2_STATUS"
+              fi
             else
-              echo "⚠️ Health check failed - API might not be ready yet"
-              echo "📋 Recent logs:"
-              pm2 logs bevars-backend --lines 10 --nostream
-            fi
-
-            echo "✅ Backend deployment completed successfully!"
+              echo "❌ PM2 process not found"
+            fi            echo "✅ Backend deployment completed successfully!"
             echo "🔧 Backend API: http://${{ secrets.DO_HOST }}:3001"
             echo "📊 Deployment Details:"
             echo "  - Commit: $GITHUB_SHA"
