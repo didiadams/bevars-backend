@@ -15,10 +15,14 @@ import { CommonModule } from 'src/common/common.module';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { CustomConfigService } from 'src/config/config.service';
+import { OtpService } from './services/otp.service';
+import { Otp } from './entities/otp.entity';
+import { MailService } from '../mail/mail-service.service';
+import { EmailLog } from '../mail/entities/email-log.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, GlobalBuyer, Exporter]),
+    TypeOrmModule.forFeature([User, GlobalBuyer, Exporter, Otp, EmailLog]),
     UserModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     CustomConfigModule,
@@ -35,6 +39,8 @@ import { CustomConfigService } from 'src/config/config.service';
   providers: [
     BetterAuthService,
     JwtStrategy,
+    OtpService,
+    MailService,
   ],
   controllers: [AuthController],
 })

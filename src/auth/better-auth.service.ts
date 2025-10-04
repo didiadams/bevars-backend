@@ -7,6 +7,7 @@ import { User, UserRole } from '../user/entities/user.entity';
 import { GlobalBuyer } from '../global-buyer/entities/global-buyer.entity';
 import { Exporter } from '../exporter/entities/exporter.entity';
 import { CreateUserDto } from '../user/dto/create-user.dto';
+import { OtpService } from './services/otp.service';
 
 @Injectable()
 export class BetterAuthService {
@@ -18,6 +19,7 @@ export class BetterAuthService {
     @InjectRepository(Exporter)
     private exporterRepository: Repository<Exporter>,
     private jwtService: JwtService,
+    private otpService: OtpService,
   ) {}
 
 
@@ -32,22 +34,25 @@ export class BetterAuthService {
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
+
       console.log('Signup userData received:', userData);
 
       // Create user with proper field mapping
-        const user = this.userRepository.create({
-          email,
-          password: hashedPassword,
-          firstName: userData.firstName || '',
-          lastName: userData.lastName || '',
-          phoneNumber: userData.phoneNumber,
-          countryCode: userData.countryCode,
-          countryName: userData.countryName,
-          role: userData.role || UserRole.GLOBAL_BUYER,
-          companyName: userData.companyName,
-          isVerified: false, // User must be verified by admin
-          isActive: false,   // User must be activated by admin
-        });
+      // User starts as unverified and inactive - must verify email via OTP
+      const user = this.userRepository.create({
+        email,
+        password: hashedPassword,
+        firstName: userData.firstName || '',
+        lastName: userData.lastName || '',
+        phoneNumber: userData.phoneNumber,
+        countryCode: userData.countryCode,
+        countryName: userData.countryName,
+        role: userData.role || UserRole.GLOBAL_BUYER,
+        companyName: userData.companyName,
+        isEmailVerified: false, // User must verify email via OTP
+        isVerified: false, // Will be set by admin after document verification
+        isActive: false,   // Will be activated after email verification (unless admin deactivates)
+      });
 
       console.log('User entity before save:', user);
       const savedUser = await this.userRepository.save(user);
@@ -72,9 +77,23 @@ export class BetterAuthService {
         console.log('Exporter created:', savedExporter.id);
       }
 
-      // Remove password from response
+      // Send email verification OTP automatically
+      try {
+        await this.otpService.sendEmailVerificationOtp(savedUser.id);
+        console.log('Email verification OTP sent successfully to:', savedUser.email);
+      } catch (otpError) {
+        console.error('Failed to send OTP email:', otpError);
+        // Don't fail the signup process if OTP email fails
+        // User can request resend later
+      }
+
+      // Remove password from response and include userId for OTP process
       const { password: _, ...userResponse } = savedUser;
-      return userResponse;
+      return {
+        ...userResponse,
+        requiresEmailVerification: true,
+        message: 'Account created successfully. Please check your email for the verification code to activate your account.',
+      };
     } catch (error) {
       console.error('Signup error:', error);
       throw new BadRequestException(`Signup failed: ${error.message}`);
@@ -99,12 +118,27 @@ export class BetterAuthService {
         throw new UnauthorizedException('Invalid credentials');
       }
 
-        // Check if user is active
-        if (!user.isActive) {
-          throw new UnauthorizedException('Your account is not active yet. Please wait for admin approval.');
-        }
+      // Check if user has verified their email
+      if (!user.isEmailVerified) {
+        // Return structured error with user info for frontend to handle
+        throw new UnauthorizedException({
+          message: 'Please verify your email address before signing in.',
+          isUnverified: true,
+          userId: user.id,
+          email: user.email,
+        });
+      }
 
-      // Generate JWT token
+      // Check if user is active
+      if (!user.isActive) {
+        throw new UnauthorizedException({
+          message: 'Your account has been deactivated by an administrator.',
+          isDeactivated: true,
+          userId: user.id,
+          email: user.email,
+          contactSupport: true,
+        });
+      }      // Generate JWT token
       const payload = { 
         sub: user.id, 
         email: user.email, 

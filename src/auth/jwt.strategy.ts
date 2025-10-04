@@ -43,9 +43,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     // Do not block JWT validation on verification flag alone.
     // Allow users who are active to authenticate; verification can be a separate admin process.
-    if (!user.isVerified) {
-      console.warn('JWT Strategy validate - user not verified (allowing login because user is active)');
-      // don't throw here — allow login as long as isActive is true
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedException('Please verify your email before accessing protected resources.');
     }
 
     // Remove sensitive fields

@@ -58,6 +58,9 @@ export class User {
   countryCode: string;
 
   @Column({ default: false })
+  isEmailVerified: boolean;
+
+  @Column({ default: false })
   isVerified: boolean;
 
   @Column({ default: false })
