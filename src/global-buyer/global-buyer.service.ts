@@ -16,6 +16,7 @@ import { Exporter } from '../exporter/entities/exporter.entity';
 import { SourcingRequest, RequestStatus } from '../sourcing-request/entities/sourcing-request.entity';
 import { Offer } from '../offer/entities/offer.entity';
 import { VerificationStatus } from '../exporter/entities/exporter.entity';
+import { OfferService } from '../offer/offer.service';
 
 
 @Injectable()
@@ -60,6 +61,8 @@ export class GlobalBuyerService {
     private readonly sourcingRequestRepository: Repository<SourcingRequest>,
     @InjectRepository(Offer)
     private readonly offerRepository: Repository<Offer>,
+    @Inject(forwardRef(() => OfferService))
+    private readonly offerService: OfferService,
   ) {}
 
   async create(createDto: CreateGlobalBuyerDto & { userId: string }): Promise<GlobalBuyer> {
@@ -280,8 +283,22 @@ export class GlobalBuyerService {
   async negotiateOffer(offerId: string, userId: string, negotiationData: any): Promise<any> {
     const globalBuyer = await this.findByUserId(userId);
     
-    // Logic to create counter-offer or negotiate terms
-    return { message: 'Negotiation sent', offerId, negotiationData };
+    // Delegate to OfferService for actual negotiation logic
+    return this.offerService.negotiate(offerId, globalBuyer.id, negotiationData);
+  }
+
+  async acceptExporterCounter(offerId: string, userId: string): Promise<any> {
+    const globalBuyer = await this.findByUserId(userId);
+    
+    // Delegate to OfferService for accepting exporter counter offers
+    return this.offerService.acceptExporterCounter(offerId, globalBuyer.id);
+  }
+
+  async counterNegotiateOffer(offerId: string, userId: string, negotiationData: any): Promise<any> {
+    const globalBuyer = await this.findByUserId(userId);
+    
+    // Delegate to OfferService for buyer counter negotiations
+    return this.offerService.buyerCounterNegotiate(offerId, globalBuyer.id, negotiationData);
   }
 
   async addToPreferred(userId: string, exporterId: string): Promise<any> {

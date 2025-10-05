@@ -26,6 +26,24 @@ export interface OrderNotificationData {
   orderDate: Date;
 }
 
+export interface NegotiationNotificationData {
+  offerId: string;
+  buyerName: string;
+  buyerCompany: string;
+  exporterName: string;
+  exporterCompany: string;
+  cropName: string;
+  originalPrice: number;
+  negotiatedPrice?: number;
+  quantity: number;
+  variety: string;
+  negotiationNotes?: string;
+  negotiationType: 'initiated' | 'counter_offer' | 'accepted' | 'declined';
+  savings?: number;
+  priceChange?: number;
+  frontendUrl?: string;
+}
+
 
 const generateEmailHtml = (verificationUrl: string, name: string) => `
 <!DOCTYPE html>
@@ -682,4 +700,252 @@ If you did not request a password reset, please ignore this email.`,
     });
   }
   */
+
+  // Negotiation Email Notifications
+  async sendNegotiationInitiatedEmail(data: NegotiationNotificationData, recipientEmail?: string): Promise<boolean> {
+    const subject = `Price Negotiation Started - ${data.cropName} Offer`;
+    return this.sendEmail({
+      email: recipientEmail || `exporter@example.com`, // Use provided email or fallback
+      subject,
+      html: this.generateNegotiationInitiatedEmail(data),
+      metadata: {
+        type: 'negotiation-initiated',
+        offerId: data.offerId,
+      },
+    });
+  }
+
+  async sendCounterOfferEmail(data: NegotiationNotificationData, recipientEmail?: string): Promise<boolean> {
+    const subject = `Counter Offer Received - ${data.cropName}`;
+    return this.sendEmail({
+      email: recipientEmail || `buyer@example.com`, // Use provided email or fallback
+      subject,
+      html: this.generateCounterOfferEmail(data),
+      metadata: {
+        type: 'counter-offer',
+        offerId: data.offerId,
+      },
+    });
+  }
+
+  async sendNegotiationAcceptedEmail(data: NegotiationNotificationData, recipientEmail?: string): Promise<boolean> {
+    const subject = `Negotiation Accepted - ${data.cropName} Order Confirmed`;
+    return this.sendEmail({
+      email: recipientEmail || `exporter@example.com`, // Use provided email or fallback
+      subject,
+      html: this.generateNegotiationAcceptedEmail(data),
+      metadata: {
+        type: 'negotiation-accepted',
+        offerId: data.offerId,
+      },
+    });
+  }
+
+  async sendNegotiationDeclinedEmail(data: NegotiationNotificationData, recipientEmail?: string): Promise<boolean> {
+    const subject = `Negotiation Declined - ${data.cropName}`;
+    return this.sendEmail({
+      email: recipientEmail || `exporter@example.com`, // Use provided email or fallback
+      subject,
+      html: this.generateNegotiationDeclinedEmail(data),
+      metadata: {
+        type: 'negotiation-declined',
+        offerId: data.offerId,
+      },
+    });
+  }
+
+  private generateNegotiationInitiatedEmail(data: NegotiationNotificationData): string {
+    const savingsAmount = data.savings || (data.originalPrice - (data.negotiatedPrice || 0));
+    const savingsPercent = data.originalPrice > 0 ? ((savingsAmount / data.originalPrice) * 100).toFixed(1) : '0';
+    
+    return `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h2 style="margin: 0;">💰 Price Negotiation Started</h2>
+        </div>
+        <div style="background: white; padding: 20px; border: 1px solid #e9ecef; border-radius: 0 0 8px 8px;">
+          <p>Dear ${data.exporterName},</p>
+          <p>Great news! <strong>${data.buyerName}</strong> from <strong>${data.buyerCompany}</strong> has initiated a price negotiation for your ${data.cropName} offer.</p>
+          
+          <div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+            <h3 style="color: #3b82f6; margin-top: 0;">Negotiation Details</h3>
+            <p><strong>Crop:</strong> ${data.cropName} (${data.variety})</p>
+            <p><strong>Quantity:</strong> ${data.quantity.toLocaleString()} units</p>
+            <p><strong>Your Original Price:</strong> ₦${data.originalPrice.toLocaleString()}/unit</p>
+            <p><strong>Buyer's Counter Price:</strong> ₦${(data.negotiatedPrice || 0).toLocaleString()}/unit</p>
+            <p><strong>Price Difference:</strong> <span style="color: #dc3545;">-₦${savingsAmount.toLocaleString()} (-${savingsPercent}%)</span></p>
+            ${data.negotiationNotes ? `<p><strong>Buyer's Notes:</strong> "${data.negotiationNotes}"</p>` : ''}
+          </div>
+
+          <div style="background-color: #e8f5e8; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0;"><strong>💡 Tip:</strong> Consider the buyer's request carefully. You can accept their offer, make a counter-offer, or politely decline.</p>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${data.frontendUrl || this.configService.get<string>('FRONTEND_URL')}/dashboard/offers/${data.offerId}" 
+               style="display: inline-block; margin: 0 10px; padding: 12px 24px; background-color: #28a745; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: 500;">View & Respond</a>
+            <a href="${data.frontendUrl || this.configService.get<string>('FRONTEND_URL')}/dashboard/offers" 
+               style="display: inline-block; margin: 0 10px; padding: 12px 24px; background-color: #6c757d; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: 500;">All Offers</a>
+          </div>
+
+          <p>Quick response times help build trust and increase your chances of closing the deal!</p>
+          <p>Best regards,<br>The Bevars Team</p>
+        </div>
+        <div style="text-align: center; padding: 20px; background-color: #f8f9fa; border-top: 1px solid #e9ecef; font-size: 14px; color: #6c757d;">
+          <p>This is an automated notification. You can manage your email preferences in your dashboard.</p>
+          <p>&copy; ${new Date().getFullYear()} Bevars. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  private generateCounterOfferEmail(data: NegotiationNotificationData): string {
+    const priceChange = data.priceChange || ((data.negotiatedPrice || 0) - data.originalPrice);
+    const isIncrease = priceChange > 0;
+    const changePercent = data.originalPrice > 0 ? ((Math.abs(priceChange) / data.originalPrice) * 100).toFixed(1) : '0';
+    
+    return `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h2 style="margin: 0;">🔄 Counter Offer Received</h2>
+        </div>
+        <div style="background: white; padding: 20px; border: 1px solid #e9ecef; border-radius: 0 0 8px 8px;">
+          <p>Dear ${data.buyerName},</p>
+          <p><strong>${data.exporterName}</strong> from <strong>${data.exporterCompany}</strong> has responded to your negotiation with a counter offer.</p>
+          
+          <div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+            <h3 style="color: #f59e0b; margin-top: 0;">Counter Offer Details</h3>
+            <p><strong>Crop:</strong> ${data.cropName} (${data.variety})</p>
+            <p><strong>Quantity:</strong> ${data.quantity.toLocaleString()} units</p>
+            <p><strong>Your Requested Price:</strong> ₦${data.originalPrice.toLocaleString()}/unit</p>
+            <p><strong>Exporter's Counter Price:</strong> ₦${(data.negotiatedPrice || 0).toLocaleString()}/unit</p>
+            <p><strong>Price Adjustment:</strong> 
+              <span style="color: ${isIncrease ? '#28a745' : '#dc3545'};">
+                ${isIncrease ? '+' : ''}₦${priceChange.toLocaleString()} (${isIncrease ? '+' : ''}${changePercent}%)
+              </span>
+            </p>
+            ${data.negotiationNotes ? `<p><strong>Exporter's Notes:</strong> "${data.negotiationNotes}"</p>` : ''}
+          </div>
+
+          <div style="background-color: #fff3cd; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0;"><strong>⏰ Decision Time:</strong> Review the counter offer and decide whether to accept, make another counter-offer, or end negotiations.</p>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${data.frontendUrl || this.configService.get<string>('FRONTEND_URL')}/dashboard/offers/${data.offerId}" 
+               style="display: inline-block; margin: 0 10px; padding: 12px 24px; background-color: #28a745; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: 500;">Accept Offer</a>
+            <a href="${data.frontendUrl || this.configService.get<string>('FRONTEND_URL')}/dashboard/offers/${data.offerId}" 
+               style="display: inline-block; margin: 0 10px; padding: 12px 24px; background-color: #f59e0b; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: 500;">Counter Again</a>
+          </div>
+
+          <p>Good negotiations lead to win-win outcomes for everyone!</p>
+          <p>Best regards,<br>The Bevars Team</p>
+        </div>
+        <div style="text-align: center; padding: 20px; background-color: #f8f9fa; border-top: 1px solid #e9ecef; font-size: 14px; color: #6c757d;">
+          <p>This is an automated notification. You can manage your email preferences in your dashboard.</p>
+          <p>&copy; ${new Date().getFullYear()} Bevars. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  private generateNegotiationAcceptedEmail(data: NegotiationNotificationData): string {
+    const finalTotal = (data.negotiatedPrice || data.originalPrice) * data.quantity;
+    
+    return `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #28a745, #218838); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h2 style="margin: 0;">🎉 Negotiation Successful!</h2>
+        </div>
+        <div style="background: white; padding: 20px; border: 1px solid #e9ecef; border-radius: 0 0 8px 8px;">
+          <p>Dear ${data.exporterName},</p>
+          <p>Congratulations! <strong>${data.buyerName}</strong> has accepted your negotiated terms for the ${data.cropName} offer.</p>
+          
+          <div style="background-color: #e8f5e8; border-radius: 8px; padding: 20px; margin: 20px 0;">
+            <h3 style="color: #28a745; margin-top: 0;">🎯 Final Agreement</h3>
+            <p><strong>Crop:</strong> ${data.cropName} (${data.variety})</p>
+            <p><strong>Quantity:</strong> ${data.quantity.toLocaleString()} units</p>
+            <p><strong>Final Price:</strong> ₦${(data.negotiatedPrice || data.originalPrice).toLocaleString()}/unit</p>
+            <p><strong>Total Value:</strong> ₦${finalTotal.toLocaleString()}</p>
+            <p><strong>Buyer:</strong> ${data.buyerName} (${data.buyerCompany})</p>
+          </div>
+
+          <div style="background-color: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 15px; margin: 20px 0;">
+            <h4 style="color: #155724; margin-top: 0;">📋 Next Steps:</h4>
+            <ul style="color: #155724; margin: 0; padding-left: 20px;">
+              <li>An order has been automatically created</li>
+              <li>Prepare your ${data.cropName} for delivery</li>
+              <li>Upload any required documentation</li>
+              <li>Coordinate delivery with the buyer</li>
+            </ul>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${data.frontendUrl || this.configService.get<string>('FRONTEND_URL')}/dashboard/orders" 
+               style="display: inline-block; margin: 0 10px; padding: 12px 24px; background-color: #28a745; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: 500;">View Order</a>
+            <a href="${data.frontendUrl || this.configService.get<string>('FRONTEND_URL')}/dashboard/offers" 
+               style="display: inline-block; margin: 0 10px; padding: 12px 24px; background-color: #6c757d; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: 500;">All Offers</a>
+          </div>
+
+          <p>Thank you for your flexibility in the negotiation process. Successful deals benefit everyone!</p>
+          <p>Best regards,<br>The Bevars Team</p>
+        </div>
+        <div style="text-align: center; padding: 20px; background-color: #f8f9fa; border-top: 1px solid #e9ecef; font-size: 14px; color: #6c757d;">
+          <p>This is an automated notification. You can manage your email preferences in your dashboard.</p>
+          <p>&copy; ${new Date().getFullYear()} Bevars. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  private generateNegotiationDeclinedEmail(data: NegotiationNotificationData): string {
+    return `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #dc3545, #c82333); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h2 style="margin: 0;">❌ Negotiation Declined</h2>
+        </div>
+        <div style="background: white; padding: 20px; border: 1px solid #e9ecef; border-radius: 0 0 8px 8px;">
+          <p>Dear ${data.exporterName},</p>
+          <p>We wanted to inform you that <strong>${data.buyerName}</strong> has decided not to proceed with the negotiated terms for your ${data.cropName} offer.</p>
+          
+          <div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+            <h3 style="color: #dc3545; margin-top: 0;">Declined Negotiation</h3>
+            <p><strong>Crop:</strong> ${data.cropName} (${data.variety})</p>
+            <p><strong>Quantity:</strong> ${data.quantity.toLocaleString()} units</p>
+            <p><strong>Last Price:</strong> ₦${(data.negotiatedPrice || data.originalPrice).toLocaleString()}/unit</p>
+            <p><strong>Buyer:</strong> ${data.buyerName} (${data.buyerCompany})</p>
+            ${data.negotiationNotes ? `<p><strong>Reason:</strong> "${data.negotiationNotes}"</p>` : ''}
+          </div>
+
+          <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0;"><strong>💡 Don't be discouraged!</strong> This is a normal part of business. Your offer is still available for other interested buyers.</p>
+          </div>
+
+          <div style="background-color: #e7f3ff; border-left: 4px solid #007bff; padding: 15px; margin: 20px 0;">
+            <h4 style="color: #007bff; margin-top: 0;">🚀 What's Next?</h4>
+            <ul style="color: #007bff; margin: 0; padding-left: 20px;">
+              <li>Your original offer remains active</li>
+              <li>Other buyers can still discover and purchase your ${data.cropName}</li>
+              <li>Consider adjusting your pricing strategy based on market feedback</li>
+              <li>Keep engaging with potential buyers</li>
+            </ul>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${data.frontendUrl || this.configService.get<string>('FRONTEND_URL')}/dashboard/offers" 
+               style="display: inline-block; margin: 0 10px; padding: 12px 24px; background-color: #007bff; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: 500;">View All Offers</a>
+            <a href="${data.frontendUrl || this.configService.get<string>('FRONTEND_URL')}/dashboard/sourcing-requests" 
+               style="display: inline-block; margin: 0 10px; padding: 12px 24px; background-color: #28a745; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: 500;">Find New Opportunities</a>
+          </div>
+
+          <p>Keep up the great work! Every interaction helps you improve and find the right buyers.</p>
+          <p>Best regards,<br>The Bevars Team</p>
+        </div>
+        <div style="text-align: center; padding: 20px; background-color: #f8f9fa; border-top: 1px solid #e9ecef; font-size: 14px; color: #6c757d;">
+          <p>This is an automated notification. You can manage your email preferences in your dashboard.</p>
+          <p>&copy; ${new Date().getFullYear()} Bevars. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+  }
 }

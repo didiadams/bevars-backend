@@ -854,11 +854,15 @@ export class ExporterService {
   async getDashboardOffers(userId: string) {
     const exporter = await this.findByUserId(userId);
     
+    // Get all offers for this exporter, prioritizing negotiated ones
     const offers = await this.offerRepository.find({
       where: { exporterId: exporter.id },
       relations: ['sourcingRequest', 'sourcingRequest.globalBuyer', 'sourcingRequest.globalBuyer.user'],
-      order: { createdAt: 'DESC' },
-      take: 5
+      order: { 
+        updatedAt: 'DESC', // Use updatedAt to show recently negotiated offers first
+        createdAt: 'DESC' 
+      },
+      take: 10 // Increased to show more offers including negotiated ones
     });
 
     return offers.map(offer => ({
@@ -870,7 +874,38 @@ export class ExporterService {
       price: `$${offer.totalPrice.toLocaleString()}`,
       status: offer.status,
       submittedAt: this.getTimeAgo(offer.createdAt),
+      updatedAt: this.getTimeAgo(offer.updatedAt),
       urgency: offer.sourcingRequest.urgencyLevel,
+      hasNegotiation: offer.status === 'under_negotiation',
+    }));
+  }
+
+  async getNegotiatedOffers(userId: string) {
+    const exporter = await this.findByUserId(userId);
+    
+    // Get only offers that are under negotiation
+    const negotiatedOffers = await this.offerRepository.find({
+      where: { 
+        exporterId: exporter.id,
+        status: 'under_negotiation' as any
+      },
+      relations: ['sourcingRequest', 'sourcingRequest.globalBuyer', 'sourcingRequest.globalBuyer.user'],
+      order: { updatedAt: 'DESC' }
+    });
+
+    return negotiatedOffers.map(offer => ({
+      id: offer.id,
+      request: offer.sourcingRequest.title,
+      buyer: offer.sourcingRequest.globalBuyer.user?.firstName 
+        ? `${offer.sourcingRequest.globalBuyer.user.firstName} ${offer.sourcingRequest.globalBuyer.user.lastName}`
+        : offer.sourcingRequest.globalBuyer.user?.companyName || 'Unknown Buyer',
+      price: `$${offer.totalPrice.toLocaleString()}`,
+      status: offer.status,
+      submittedAt: this.getTimeAgo(offer.createdAt),
+      updatedAt: this.getTimeAgo(offer.updatedAt),
+      urgency: offer.sourcingRequest.urgencyLevel,
+      hasNegotiation: true,
+      negotiationNotes: offer.negotiationNotes,
     }));
   }
 

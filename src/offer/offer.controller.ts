@@ -73,6 +73,13 @@ export class OfferController {
     return this.offerService.createCounterOffer(id, counterOfferDto, exporter.id);
   }
 
+  @Put(':id/accept-buyer-negotiation')
+  async acceptBuyerNegotiation(@Param('id') id: string, @Request() req) {
+    // Get the actual exporter entity for this user
+    const exporter = await this.exporterService.findByUserId(req.user.id);
+    return this.offerService.acceptBuyerNegotiation(id, exporter.id);
+  }
+
   @Put(':id/accept-negotiation')
   async acceptNegotiation(@Param('id') id: string, @Request() req) {
     return this.offerService.acceptNegotiation(id, req.user.id);
@@ -89,7 +96,32 @@ export class OfferController {
 
   @Get(':id/history')
   async getOfferHistory(@Param('id') id: string, @Request() req) {
-    return this.offerService.getOfferHistory(id, req.user.id);
+    // Determine if user is exporter or global buyer
+    let exporterId = null;
+    let globalBuyerId = null;
+    
+    try {
+      const exporter = await this.exporterService.findByUserId(req.user.id);
+      exporterId = exporter.id;
+    } catch (error) {
+      // User is not an exporter, try global buyer
+      try {
+        const globalBuyer = await this.globalBuyerService.findByUserId(req.user.id);
+        globalBuyerId = globalBuyer.id;
+      } catch (globalBuyerError) {
+        // User is neither exporter nor global buyer
+        throw new BadRequestException('User must be either an exporter or global buyer to access offer history');
+      }
+    }
+    
+    return this.offerService.getOfferHistory(id, exporterId, globalBuyerId);
+  }
+
+  @Get(':id/pending-negotiation')
+  async getPendingNegotiation(@Param('id') id: string, @Request() req) {
+    // Get the actual exporter entity for this user
+    const exporter = await this.exporterService.findByUserId(req.user.id);
+    return this.offerService.getPendingNegotiation(id, exporter.id);
   }
 
   @Post(':id/upload-document')
@@ -183,6 +215,79 @@ export class OfferController {
         success: false, 
         message: 'Database connection failed', 
         error: error.message 
+      };
+    }
+  }
+
+  // DEBUG: Test negotiation creation
+  @Post('debug/:id/create-test-negotiation')
+  async createTestNegotiation(@Param('id') id: string, @Request() req) {
+    try {
+      // Get the offer
+      const offer = await this.offerService.findOne(id);
+      
+      // Simulate a buyer negotiation
+      const globalBuyer = await this.globalBuyerService.findByUserId(offer.sourcingRequest.globalBuyer.userId);
+      
+      const negotiationResult = await this.offerService.negotiate(id, globalBuyer.id, {
+        counterPrice: offer.pricePerUnit * 0.9, // 10% lower
+        counterQuantity: offer.availableQuantity,
+        negotiationNotes: 'Test negotiation - requesting 10% price reduction'
+      });
+      
+      return {
+        success: true,
+        message: 'Test negotiation created successfully',
+        offer: negotiationResult
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to create test negotiation',
+        error: error.message
+      };
+    }
+  }
+
+  // DEBUG: Get negotiation status for offer
+  @Get('debug/:id/negotiation-status')
+  async getNegotiationStatus(@Param('id') id: string) {
+    try {
+      const offer = await this.offerService.findOne(id);
+      const allNegotiations = await this.offerService['negotiationHistoryRepository'].findByOfferId(id);
+      const pendingNegotiation = await this.offerService['negotiationHistoryRepository'].findPendingNegotiation(id);
+      
+      return {
+        success: true,
+        offer: {
+          id: offer.id,
+          status: offer.status,
+          pricePerUnit: offer.pricePerUnit,
+          availableQuantity: offer.availableQuantity,
+          totalPrice: offer.totalPrice
+        },
+        allNegotiations: allNegotiations.map(n => ({
+          id: n.id,
+          type: n.type,
+          status: n.status,
+          round: n.negotiationRound,
+          proposedPrice: n.proposedPricePerUnit,
+          proposedQuantity: n.proposedQuantity,
+          notes: n.notes,
+          createdAt: n.createdAt
+        })),
+        pendingNegotiation: pendingNegotiation ? {
+          id: pendingNegotiation.id,
+          type: pendingNegotiation.type,
+          status: pendingNegotiation.status,
+          round: pendingNegotiation.negotiationRound
+        } : null
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to get negotiation status',
+        error: error.message
       };
     }
   }

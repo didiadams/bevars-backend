@@ -157,6 +157,24 @@ export class GlobalBuyerController {
     return this.globalBuyerService.negotiateOffer(offerId, req.user.id, negotiationDto);
   }
 
+  @Post('offers/:offerId/accept-counter')
+  async acceptExporterCounter(
+    @Param('offerId') offerId: string,
+    @Request() req
+  ): Promise<any> {
+    return this.globalBuyerService.acceptExporterCounter(offerId, req.user.id);
+  }
+
+  @Post('offers/:offerId/counter-negotiate')
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async counterNegotiateOffer(
+    @Param('offerId') offerId: string,
+    @Body() negotiationDto: any,
+    @Request() req
+  ): Promise<any> {
+    return this.globalBuyerService.counterNegotiateOffer(offerId, req.user.id, negotiationDto);
+  }
+
   @Get('preferred-exporters')
   async getPreferredExporters(@Request() req): Promise<any[]> {
     return this.globalBuyerService.getPreferredExporters(req.user.id);

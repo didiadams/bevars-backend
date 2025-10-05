@@ -156,6 +156,11 @@ export class ExporterController {
     return this.exporterService.getDashboardOffers(req.user.id);
   }
 
+  @Get('negotiated-offers')
+  async getNegotiatedOffers(@Request() req) {
+    return this.exporterService.getNegotiatedOffers(req.user.id);
+  }
+
   @Get('dashboard/activity')
   async getDashboardActivity(@Request() req) {
     return this.exporterService.getDashboardActivity(req.user.id);

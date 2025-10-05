@@ -69,8 +69,34 @@ export class User {
   @Column({ type: 'enum', enum: UserStatus, default: UserStatus.ACTIVE })
   status: UserStatus;
 
-@Column({ type: 'integer', default: 0 }) 
-tokenVersion: number;                    
+  @Column({ type: 'integer', default: 0 }) 
+  tokenVersion: number;
+
+  // Notification Preferences
+  @Column({ type: 'json', nullable: true })
+  emailNotificationPreferences: {
+    negotiationStarted: boolean;
+    counterOfferReceived: boolean;
+    negotiationAccepted: boolean;
+    negotiationDeclined: boolean;
+    orderCreated: boolean;
+    orderStatusUpdated: boolean;
+    marketTrends: boolean;
+    platformUpdates: boolean;
+  };
+
+  @Column({ type: 'json', nullable: true })
+  pushNotificationPreferences: {
+    negotiationStarted: boolean;
+    counterOfferReceived: boolean;
+    negotiationAccepted: boolean;
+    negotiationDeclined: boolean;
+    orderCreated: boolean;
+    orderStatusUpdated: boolean;
+  };
+
+  @Column({ type: 'enum', enum: ['immediate', 'daily', 'weekly'], default: 'immediate' })
+  notificationFrequency: 'immediate' | 'daily' | 'weekly';                    
 
   @OneToOne(() => GlobalBuyer, (globalBuyer) => globalBuyer.user)
   globalBuyer: GlobalBuyer;
