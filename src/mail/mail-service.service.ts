@@ -1,11 +1,10 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
-import { Transporter } from 'nodemailer';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EmailLog, EmailStatus } from './entities/email-log.entity';
 import { Cron } from '@nestjs/schedule';
+import { MailtrapClient } from 'mailtrap';
 
 export interface EmailOptions {
   email: string;
@@ -171,7 +170,7 @@ const generateEmailHtml = (verificationUrl: string, name: string) => `
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private transporter: Transporter;
+  private mailtrapClient: MailtrapClient;
   private adminEmail: string;
   private emailQueue: Array<{
     options: EmailOptions;
@@ -184,8 +183,12 @@ export class MailService {
     @InjectRepository(EmailLog)
     private emailLogRepository: Repository<EmailLog>,
   ) {
-    this.initializeTransporter();
+    const token = this.configService.get<string>('MAILTRAP_API_TOKEN');
+    if (token) {
+      this.mailtrapClient = new MailtrapClient({ token });
+    }
     this.adminEmail = this.configService.get('ADMIN_EMAIL');
+    this.logger.log('Email service initialized with Mailtrap Client');
   }
 
   @Cron('*/30 * * * * *')
@@ -194,15 +197,8 @@ export class MailService {
 
     const emailJob = this.emailQueue[0];
     try {
-      const emailOptions = {
-        from: this.configService.get<string>('EMAIL_FROM', 'no-reply@bevars.com'),
-        to: emailJob.options.email,
-        subject: emailJob.options.subject,
-        text: emailJob.options.text,
-        html: emailJob.options.html,
-      };
-
-      const info = await this.transporter.sendMail(emailOptions);
+      // Use Mailtrap Email API instead of SMTP
+      const response = await this.sendViaMailtrapAPI(emailJob.options);
       
       // Update email log on success
       if (emailJob.options.metadata?.logId) {
@@ -211,7 +207,7 @@ export class MailService {
           {
             status: EmailStatus.SENT,
             sentAt: new Date(),
-            messageId: info.messageId,
+            messageId: response.message_id,
           },
         );
       }
@@ -246,52 +242,34 @@ export class MailService {
   }
 
   
-  private initializeTransporter() {
-    // Check which mail configuration to use based on environment variables
-    if (this.configService.get<string>('MAIL_HOST')) {
-      // Use the standard SMTP configuration
-      this.transporter = nodemailer.createTransport({
-        host: this.configService.get('MAIL_HOST'),
-        port: this.configService.get('MAIL_PORT'),
-        secure: this.configService.get('MAIL_SECURE') === 'true',
-        auth: {
-          user: this.configService.get('MAIL_USER'),
-          pass: this.configService.get('MAIL_PASSWORD'),
-        },
-      });
-
-    } else {
-      // Use Mailtrap configuration as fallback
-      this.transporter = nodemailer.createTransport({
-        host: 'live.smtp.mailtrap.io',
-          port: this.configService.get<number>('MAIL_PORT') || 587,
-        auth: {
-          user:
-            this.configService.get<string>('MAIL_SERVICE_USERNAME') || 'api',
-          pass: this.configService.get<string>('MAIL_SERVICE_PASSWORD'),
-        },
-      });
+  private async sendViaMailtrapAPI(options: EmailOptions): Promise<any> {
+    if (!this.mailtrapClient) {
+      throw new Error('Mailtrap client is not configured');
     }
 
-    // Mailtrap SMTP configuration (your actual email service)
-    const mailtrapUser = this.configService.get<string>('MAIL_SERVICE_USERNAME');
-    const mailtrapPass = this.configService.get<string>('MAIL_SERVICE_PASSWORD');
-    
-    if (mailtrapUser && mailtrapPass) {
-      this.transporter = nodemailer.createTransport({
-        host: 'live.smtp.mailtrap.io',
-        port: 587,
-        secure: false, // Use STARTTLS
-        auth: {
-          user: mailtrapUser,
-          pass: mailtrapPass,
-        },
-        tls: {
-          ciphers: 'SSLv3',
-        },
+    const sender = { 
+      name: 'Bevars Platform', 
+      email: this.configService.get<string>('EMAIL_FROM', 'no-reply@bevars.com') 
+    };
+
+    try {
+      const response = await this.mailtrapClient.send({
+        from: sender,
+        to: [{ 
+          email: options.email,
+          name: options.metadata?.name || '' 
+        }],
+        subject: options.subject,
+        text: options.text,
+        html: options.html,
+        category: 'Integration Test'
       });
-      this.logger.log('Email service initialized with Mailtrap SMTP');
-      return;
+
+      this.logger.log(`Email sent successfully via Mailtrap Client to ${options.email}`);
+      return response;
+    } catch (error) {
+      this.logger.error(`Mailtrap Client error: ${error.message}`);
+      throw error;
     }
   }
 
