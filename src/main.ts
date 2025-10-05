@@ -7,34 +7,20 @@ import { Reflector } from '@nestjs/core';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  // const whitelistedOrigins = [
-  //   'https://farm-frontend-rosy.vercel.app',
-  //   'http://localhost:8080',
-  //   'https://www.bevars.com',
-  //   'https://bevars.com',
-  // ];
-  // app.use(helmet());
-
-  // app.use(
-  //   helmet({
-  //     contentSecurityPolicy: {
-  //       directives: {
-  //         defaultSrc: ["'self'"],
-  //         scriptSrc:  ["'self'", ...whitelistedEndpoints],
-  //         styleSrc: ["'self'", "'unsafe-inline'", ...whitelistedEndpoints],
-  //         imgSrc: ["'self'", 'data:', ...whitelistedEndpoints],
-  //         objectSrc: ["'none'"],
-  //         upgradeInsecureRequests: [],
-
-  //       },
-  //     },
-  //     frameguard: { action: 'deny' }, // Prevent clickjacking
-  //     xssFilter: true, // XSS protection
-  //     noSniff: true, // Prevent MIME type sniffing
-  //     ieNoOpen: true, // X-Download-Options for IE8+
-  //     referrerPolicy: { policy: 'no-referrer' }, // Referrer policy
-  //   }),
-  // );
+  
+  // Block access to sensitive files
+  app.use((req, res, next) => {
+    const blockedPaths = ['.env', '.env.production', '.env.local', 'package.json', 'yarn.lock', 'node_modules'];
+    const requestPath = req.path.toLowerCase();
+    
+    if (blockedPaths.some(blocked => requestPath.includes(blocked))) {
+      return res.status(403).json({ 
+        message: 'Access denied',
+        statusCode: 403 
+      });
+    }
+    next();
+  });
 
 app.enableCors({
   origin: (origin, callback) => {

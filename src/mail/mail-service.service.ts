@@ -245,6 +245,7 @@ export class MailService {
     }
   }
 
+  
   private initializeTransporter() {
     // Check which mail configuration to use based on environment variables
     if (this.configService.get<string>('MAIL_HOST')) {
@@ -271,25 +272,26 @@ export class MailService {
       });
     }
 
-    // Commented out Gmail OAuth2 configuration for reference
-    /*
-    this.transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      auth: {
-        type: 'OAuth2',
-        user: 'farmercomplete3@gmail.com',
-        clientId: `${this.configService.get<string>('MAIL_SERVICE_CLIENT_ID')}`,
-        clientSecret: `${this.configService.get<string>('MAIL_SERVICE_CLIENT_SECRET')}`,
-        refreshToken: `${this.configService.get<string>('MAIL_SERVICE_REFRESH_TOKEN')}`,
-        accessToken: `${this.configService.get<string>('MAIL_SERVICE_ACCESS_TOKEN')}`,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-    });
-    */
+    // Mailtrap SMTP configuration (your actual email service)
+    const mailtrapUser = this.configService.get<string>('MAIL_SERVICE_USERNAME');
+    const mailtrapPass = this.configService.get<string>('MAIL_SERVICE_PASSWORD');
+    
+    if (mailtrapUser && mailtrapPass) {
+      this.transporter = nodemailer.createTransport({
+        host: 'live.smtp.mailtrap.io',
+        port: 587,
+        secure: false, // Use STARTTLS
+        auth: {
+          user: mailtrapUser,
+          pass: mailtrapPass,
+        },
+        tls: {
+          ciphers: 'SSLv3',
+        },
+      });
+      this.logger.log('Email service initialized with Mailtrap SMTP');
+      return;
+    }
   }
 
   async sendEmail(options: EmailOptions): Promise<boolean> {

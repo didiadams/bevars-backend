@@ -21,12 +21,12 @@ import {
   ResendOtpDto,
   SendOtpDto,
 } from './dto/otp.dto';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../user/entities/user.entity';
 
-@ApiTags('Authentication')
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -75,9 +75,7 @@ export class AuthController {
   // OTP Endpoints
   @Post('send-email-verification')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Send email verification OTP' })
-  @ApiResponse({ status: 200, description: 'OTP sent successfully' })
-  @ApiResponse({ status: 400, description: 'Bad request' })
+
   async sendEmailVerification(
     @Body() sendEmailVerificationDto: SendEmailVerificationDto,
     @Ip() ipAddress: string,
@@ -98,9 +96,6 @@ export class AuthController {
 
   @Post('verify-email-otp')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify email using OTP' })
-  @ApiResponse({ status: 200, description: 'Email verified successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid or expired OTP' })
   async verifyEmailOtp(
     @Body() verifyEmailOtpDto: VerifyEmailOtpDto,
     @Ip() ipAddress: string,
@@ -122,9 +117,6 @@ export class AuthController {
 
   @Post('resend-email-verification')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Resend email verification OTP' })
-  @ApiResponse({ status: 200, description: 'OTP resent successfully' })
-  @ApiResponse({ status: 400, description: 'Bad request' })
   async resendEmailVerification(
     @Body() resendOtpDto: ResendOtpDto,
     @Ip() ipAddress: string,
@@ -145,9 +137,6 @@ export class AuthController {
 
   @Post('check-verification-status')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Check if user needs email verification' })
-  @ApiResponse({ status: 200, description: 'Verification status retrieved' })
-  @ApiResponse({ status: 400, description: 'Bad request' })
   async checkVerificationStatus(@Body() { email }: { email: string }) {
     const user = await this.userRepository.findOne({ where: { email } });
     
@@ -165,8 +154,6 @@ export class AuthController {
 
   @Post('send-password-reset-otp')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Send password reset OTP' })
-  @ApiResponse({ status: 200, description: 'OTP sent successfully' })
   async sendPasswordResetOtp(
     @Body() sendOtpDto: SendOtpDto,
     @Ip() ipAddress: string,
