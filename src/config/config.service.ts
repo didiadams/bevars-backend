@@ -14,7 +14,7 @@ export class CustomConfigService {
   get mailServicePassword(): string {
     return (
       process.env.MAIL_SERVICE_PASSWORD ||
-      this.customConfig.get<string>('MAIL_SERVICE_USERNAME')
+      this.customConfig.get<string>('MAIL_SERVICE_PASSWORD')
     );
   }
 
