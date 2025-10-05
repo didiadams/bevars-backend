@@ -259,11 +259,12 @@ export class MailService {
           pass: this.configService.get('MAIL_PASSWORD'),
         },
       });
+
     } else {
       // Use Mailtrap configuration as fallback
       this.transporter = nodemailer.createTransport({
         host: 'live.smtp.mailtrap.io',
-        port: 587,
+          port: this.configService.get<number>('MAIL_PORT') || 587,
         auth: {
           user:
             this.configService.get<string>('MAIL_SERVICE_USERNAME') || 'api',

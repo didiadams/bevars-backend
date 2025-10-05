@@ -18,6 +18,14 @@ export class CustomConfigService {
     );
   }
 
+  get mailPort(): number {
+    return (
+      parseInt(process.env.MAIL_PORT) ||
+      this.customConfig.get<number>('MAIL_PORT') ||
+      587
+    );
+  }
+
   get frontendUrl(): string {
     return this.customConfig.get<string>('FRONTEND_URL');
   }
