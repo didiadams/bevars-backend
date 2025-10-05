@@ -31,7 +31,10 @@
     "pm2:start": "pm2 start ecosystem.config.js --env production",
     "pm2:restart": "pm2 restart bevars-backend",
     "pm2:stop": "pm2 stop bevars-backend",
-    "pm2:logs": "pm2 logs bevars-backend"
+    "pm2:logs": "pm2 logs bevars-backend",
+    "deploy:build": "yarn install && yarn build && rm -rf node_modules && yarn install --production",
+    "deploy:package": "mkdir -p deploy-package && cp -r dist node_modules package.json yarn.lock ecosystem.config.js deploy-package/",
+    "deploy:quick": "yarn deploy:build && yarn deploy:package"
   },
   "dependencies": {
     "@nestjs/axios": "^3.1.3",

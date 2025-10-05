@@ -1,0 +1,20 @@
+# Files to exclude from deployment package
+src/
+test/
+coverage/
+.git/
+.github/
+node_modules/@types/
+*.test.ts
+*.spec.ts
+.env.local
+.env.development
+README.md
+.eslintrc.js
+prettier.config.js
+jest.config.js
+tsconfig.json
+tsconfig.build.json
+yarn-error.log
+.gitignore
+hp.ts

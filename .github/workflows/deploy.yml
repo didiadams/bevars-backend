@@ -1,4 +1,4 @@
-name: Deploy Backend to DigitalOcean
+name: Deploy Backend to DigitalOcean (Optimized)
 
 on:
   push:
@@ -9,18 +9,102 @@ on:
   workflow_dispatch: # Allow manual deployment
 
 jobs:
-  deploy-backend:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    name: Deploy Backend to DigitalOcean
+    name: Build & Deploy Backend
 
     steps:
       - name: 📢 Deployment Started
         run: |
-          echo "🚀 DEPLOYMENT STARTED"
+          echo "🚀 OPTIMIZED DEPLOYMENT STARTED"
           echo "Repository: ${{ github.repository }}"
           echo "Commit: ${{ github.sha }}"
           echo "Triggered by: ${{ github.actor }}"
-      - name: Deploy Backend to DigitalOcean
+
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'yarn'
+          cache-dependency-path: 'backend/yarn.lock'
+
+      - name: 🔨 Build Backend Locally
+        run: |
+          cd backend
+          echo "📦 Installing dependencies..."
+          yarn install --frozen-lockfile
+
+          echo "🔨 Building TypeScript..."
+          yarn build
+
+          echo "🧹 Cleaning up dev dependencies..."
+          rm -rf node_modules
+
+          echo "📦 Installing production dependencies only..."
+          yarn install --frozen-lockfile --production
+
+      - name: 📋 Create Deployment Package
+        run: |
+          cd backend
+          echo "📦 Creating deployment package..."
+
+          # Create deployment directory
+          mkdir -p deploy-package
+
+          # Copy essential files
+          cp -r dist/ deploy-package/
+          cp -r node_modules/ deploy-package/
+          cp package.json deploy-package/
+          cp yarn.lock deploy-package/
+          cp ecosystem.config.js deploy-package/
+
+          # Create archive
+          tar -czf backend-deploy.tar.gz -C deploy-package .
+
+          echo "✅ Deployment package created: $(du -h backend-deploy.tar.gz)"
+
+      - name: 🚀 Deploy to DigitalOcean
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USERNAME }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          port: ${{ secrets.DO_PORT }}
+          timeout: 300s
+          command_timeout: 600s
+          script: |
+            echo "🚀 Starting Optimized Backend Deployment..."
+
+            # Check system resources
+            echo "📊 System Resources:"
+            echo "Memory: $(free -h | grep '^Mem:' | awk '{print $3 "/" $2}')"
+            echo "Disk: $(df -h / | tail -1 | awk '{print $3 "/" $2 " (" $5 " used)"}')"
+
+            # Create backup of current deployment
+            if [ -d ~/bevars-exports/backend ]; then
+              echo "💾 Creating backup..."
+              mv ~/bevars-exports/backend ~/bevars-exports/backend-backup-$(date +%Y%m%d-%H%M%S) || true
+            fi
+
+            # Create fresh directory
+            mkdir -p ~/bevars-exports/backend
+            cd ~/bevars-exports/backend
+
+      - name: 📤 Upload Deployment Package
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USERNAME }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          port: ${{ secrets.DO_PORT }}
+          source: 'backend/backend-deploy.tar.gz'
+          target: '~/bevars-exports/'
+          strip_components: 1
+
+      - name: 🔄 Extract and Start Application
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DO_HOST }}
@@ -30,47 +114,40 @@ jobs:
           timeout: 300s
           command_timeout: 300s
           script: |
-            echo "🚀 Starting Backend Deployment..."
-
-            # Navigate to backend directory (we're already here since workflow is in backend repo)
             cd ~/bevars-exports/backend
 
-            # Set production environment
+            echo "📦 Extracting deployment package..."
+            tar -xzf ../backend-deploy.tar.gz
+
+            echo "🗑️ Cleaning up archive..."
+            rm ../backend-deploy.tar.gz
+
+            echo "🔄 Restarting application with PM2..."
             export NODE_ENV=production
 
-            # Pull latest changes
-            echo "� Pulling latest code from GitHub..."
-            git pull origin main
+            # Stop existing process if running
+            pm2 stop bevars-backend || echo "No existing process to stop"
 
-            # Install dependencies
-            echo "📦 Installing/updating dependencies..."
-            yarn install --frozen-lockfile --production=false
+            # Start the application
+            pm2 start ecosystem.config.js --env production
 
-            # Build backend
-            echo "🔨 Building TypeScript backend..."
-            yarn build
+            # Wait for startup
+            sleep 3
 
-            # Restart backend with PM2
-            echo "🔄 Restarting backend application..."
-            pm2 restart bevars-backend || pm2 start ecosystem.config.js --env production
-
-            # Simple status check (no PM2 daemon interactions)
-            echo "� Checking backend status..."
-            sleep 2
-
-            # Quick PM2 status check without daemon mode
+            # Check status
             if pm2 list | grep -q "bevars-backend.*online"; then
               echo "✅ Backend is running successfully!"
+              echo "🔧 Backend API: http://${{ secrets.DO_HOST }}:3001"
+              echo "📊 Deployment completed in record time!"
             else
-              echo "⚠️ Backend status check completed"
+              echo "❌ Backend failed to start"
+              pm2 logs bevars-backend --lines 10
+              exit 1
             fi
 
-            echo "✅ Backend deployment completed successfully!"
-            echo "🔧 Backend API: http://${{ secrets.DO_HOST }}:3001"
-            echo "📊 Deployment Details:"
-            echo "  - Commit: $GITHUB_SHA"
-            echo "  - Branch: $GITHUB_REF_NAME"
-            echo "  - Triggered by: $GITHUB_ACTOR"
+            # Clean up old backups (keep last 3)
+            echo "🧹 Cleaning up old backups..."
+            cd ~/bevars-exports
+            ls -t backend-backup-* 2>/dev/null | tail -n +4 | xargs rm -rf || true
 
-            # Ensure script exits cleanly
-            exit 0
+            echo "✅ Optimized deployment completed successfully!"
