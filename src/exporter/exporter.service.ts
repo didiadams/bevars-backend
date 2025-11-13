@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindManyOptions, Between, MoreThanOrEqual, LessThanOrEqual, In } from 'typeorm';
 import { Exporter, VerificationStatus, ExporterCategory } from './entities/exporter.entity';
@@ -10,6 +10,7 @@ import { UpdateExporterDto } from './dto/update-exporter.dto';
 import { VerifyExporterDto } from './dto/verify-exporter.dto';
 import { SourcingRequest, RequestStatus } from '../sourcing-request/entities/sourcing-request.entity';
 import { Offer, OfferStatus } from '../offer/entities/offer.entity';
+import { OfferService } from '../offer/offer.service';
 
 @Injectable()
 export class ExporterService {
@@ -25,6 +26,8 @@ export class ExporterService {
     @InjectRepository(VerificationRequirement)
     private verificationRequirementRepository: Repository<VerificationRequirement>,
     private cloudinaryService: CloudinaryService,
+    @Inject(forwardRef(() => OfferService))
+    private offerService: OfferService,
   ) {}
 
   async create(createExporterDto: CreateExporterDto & { userId?: string }): Promise<Exporter> {
@@ -1098,19 +1101,11 @@ export class ExporterService {
   async getOfferById(offerId: string, userId: string) {
     const exporter = await this.findByUserId(userId);
     
-    const offer = await this.offerRepository.findOne({
-      where: { 
-        id: offerId,
-        exporterId: exporter.id 
-      },
-      relations: [
-        'sourcingRequest', 
-        'sourcingRequest.globalBuyer', 
-        'sourcingRequest.globalBuyer.user'
-      ]
-    });
+    // Use the offer service's findOne method to get original values
+    const offer = await this.offerService.findOne(offerId, userId);
 
-    if (!offer) {
+    // Verify exporter ownership
+    if (offer.exporterId !== exporter.id) {
       throw new NotFoundException('Offer not found or you do not have permission to view it');
     }
 
@@ -1135,12 +1130,17 @@ export class ExporterService {
       pricing: {
         unitPrice: Number(offer.pricePerUnit),
         totalPrice: Number(offer.totalPrice),
-        currency: offer.currency || 'USD'
+        currency: offer.currency || 'USD',
+        // Include original values if available (when under negotiation)
+        originalUnitPrice: (offer as any).originalPricePerUnit ? Number((offer as any).originalPricePerUnit) : undefined,
+        originalTotalPrice: (offer as any).originalTotalPrice ? Number((offer as any).originalTotalPrice) : undefined,
       },
       quantity: {
         requested: Number(request.quantity),
         offered: Number(offer.availableQuantity),
-        unit: request.unit || 'units'
+        unit: request.unit || 'units',
+        // Include original quantity if available
+        originalOffered: (offer as any).originalAvailableQuantity ? Number((offer as any).originalAvailableQuantity) : undefined,
       },
       delivery: {
         method: offer.shippingDetails || 'Standard Shipping',

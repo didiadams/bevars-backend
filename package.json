@@ -65,6 +65,7 @@
     "csv-writer": "^1.6.0",
     "exceljs": "^4.4.0",
     "helmet": "^8.0.0",
+    "ioredis": "^5.8.2",
     "jsonwebtoken": "^9.0.2",
     "mailtrap": "^4.3.0",
     "node-mailjet": "^6.0.6",

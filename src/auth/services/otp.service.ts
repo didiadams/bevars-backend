@@ -76,7 +76,7 @@ export class OtpService {
         status: OtpStatus.ACTIVE,
       },
     });
-
+console.log("otp", otp);
     if (!otp) {
       throw new BadRequestException('Invalid or expired OTP');
     }
@@ -134,8 +134,8 @@ export class OtpService {
     
     // Send OTP via email
     await this.sendOtpEmail(user.email, otpCode, user.firstName || 'User', OtpType.EMAIL_VERIFICATION);
-    
-    this.logger.log(`Email verification OTP sent to user ${userId} (${user.email})`);
+
+    this.logger.log(`Email verification OTP sent to user ${userId} (${user.email}, ${otpCode})`);
   }
 
   async verifyEmailOtp(

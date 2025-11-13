@@ -92,6 +92,23 @@ export class OfferService {
       }
     }
 
+    // Get negotiation history to retrieve original offer values
+    if (offer.status === OfferStatus.UNDER_NEGOTIATION) {
+      const negotiations = await this.negotiationHistoryRepository.findByOfferId(id);
+      
+      // Find the original exporter offer (round 1, EXPORTER_COUNTER type)
+      const originalExporterOffer = negotiations.find(
+        n => n.type === NegotiationType.EXPORTER_COUNTER && n.negotiationRound === 1
+      );
+      
+      // Attach original values to the offer object
+      if (originalExporterOffer) {
+        (offer as any).originalPricePerUnit = originalExporterOffer.proposedPricePerUnit;
+        (offer as any).originalAvailableQuantity = originalExporterOffer.proposedQuantity;
+        (offer as any).originalTotalPrice = originalExporterOffer.proposedTotalPrice;
+      }
+    }
+
     return offer;
   }
 
@@ -310,6 +327,25 @@ export class OfferService {
     // Mark any existing pending negotiations as superseded
     await this.negotiationHistoryRepository.markSuperseded(offer.id);
 
+    // Get current round to determine if this is the first negotiation
+    const currentRound = await this.negotiationHistoryRepository.getCurrentRound(offer.id);
+    const isFirstNegotiation = currentRound === 0;
+
+    // If this is the first negotiation, save the original exporter's offer values
+    if (isFirstNegotiation) {
+      await this.negotiationHistoryRepository.create({
+        offerId: offer.id,
+        type: NegotiationType.EXPORTER_COUNTER, // Use EXPORTER_COUNTER to mark as exporter's original
+        status: NegotiationStatus.SUPERSEDED, // Mark as superseded since buyer is countering
+        proposedPricePerUnit: offer.pricePerUnit,
+        proposedQuantity: offer.availableQuantity,
+        proposedTotalPrice: offer.totalPrice,
+        notes: 'Original exporter offer',
+        initiatedBy: offer.exporterId,
+        negotiationRound: 1, // First round is the original offer
+      });
+    }
+
     // Update offer status to under negotiation
     offer.status = OfferStatus.UNDER_NEGOTIATION;
     
@@ -325,8 +361,7 @@ export class OfferService {
 
     const savedOffer = await this.offerRepository.save(offer) as any as Offer;
 
-    // Create negotiation history record
-    const currentRound = await this.negotiationHistoryRepository.getCurrentRound(offer.id);
+    // Create negotiation history record for buyer's negotiation
     await this.negotiationHistoryRepository.create({
       offerId: offer.id,
       type: NegotiationType.BUYER_NEGOTIATION,
@@ -336,7 +371,7 @@ export class OfferService {
       proposedTotalPrice: (negotiationTerms.counterPrice || offer.pricePerUnit) * (negotiationTerms.counterQuantity || offer.availableQuantity),
       notes: negotiationTerms.negotiationNotes,
       initiatedBy: globalBuyerId,
-      negotiationRound: currentRound + 1,
+      negotiationRound: isFirstNegotiation ? 2 : currentRound + 1, // If first, buyer is round 2
     });
 
     // Send email notification to exporter about negotiation
