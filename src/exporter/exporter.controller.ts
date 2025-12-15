@@ -71,7 +71,11 @@ export class ExporterController {
 
   // Upload a single verification document file (multipart)
   @Post('verification/documents/:documentType')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB max for mobile photos
+    },
+  }))
   async uploadVerificationDocumentFile(
     @Param('documentType') documentType: string,
     @UploadedFile() file: Express.Multer.File,

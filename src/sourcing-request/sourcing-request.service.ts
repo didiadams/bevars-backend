@@ -1,13 +1,16 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, HttpException, HttpStatus, forwardRef } from '@nestjs/common';
 import { Repository, FindManyOptions, Between, In, DataSource, DeepPartial } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { SourcingRequest, RequestStatus, UrgencyLevel, QualityStandards } from './entities/sourcing-request.entity';
+import { ExporterService } from '../exporter/exporter.service';
 
 @Injectable()
 export class SourcingRequestService {
   constructor(
     @InjectRepository(SourcingRequest)
     private sourcingRequestRepository: Repository<SourcingRequest>,
+    @Inject(forwardRef(() => ExporterService))
+    private exporterService: ExporterService,
   ) {}
 
   async findAll(filters: {
@@ -19,6 +22,7 @@ export class SourcingRequestService {
     maxBudget?: number;
     urgency?: string;
     search?: string;
+    exporterUserId?: string; // Filter by exporter's primaryCrops
   }): Promise<{
     requests: SourcingRequest[];
     total: number;
@@ -28,6 +32,18 @@ export class SourcingRequestService {
     const page = filters.page || 1;
     const limit = filters.limit || 10;
     const skip = (page - 1) * limit;
+
+    // If exporterUserId is provided, get their primaryCrops for filtering
+    let exporterCrops: string[] = [];
+    if (filters.exporterUserId) {
+      try {
+        const exporter = await this.exporterService.findByUserId(filters.exporterUserId);
+        exporterCrops = exporter?.primaryCrops || [];
+      } catch (error) {
+        // If exporter not found, continue without crop filtering
+        console.warn('Could not find exporter for crop filtering:', error.message);
+      }
+    }
 
     const queryBuilder = this.sourcingRequestRepository
       .createQueryBuilder('request')
@@ -59,6 +75,21 @@ export class SourcingRequestService {
 
     if (filters.urgency) {
       queryBuilder.andWhere('request.urgencyLevel = :urgency', { urgency: filters.urgency });
+    }
+
+    // Filter by exporter's primaryCrops - only show requests matching their crops
+    if (exporterCrops.length > 0) {
+      // Match productName against any of the exporter's primaryCrops (case-insensitive)
+      const cropConditions = exporterCrops.map((_, index) => 
+        `LOWER(request.productName) LIKE LOWER(:crop${index})`
+      ).join(' OR ');
+      
+      const cropParams = exporterCrops.reduce((acc, crop, index) => {
+        acc[`crop${index}`] = `%${crop.replace(/_/g, ' ')}%`;
+        return acc;
+      }, {} as Record<string, string>);
+      
+      queryBuilder.andWhere(`(${cropConditions})`, cropParams);
     }
 
     if (filters.search) {

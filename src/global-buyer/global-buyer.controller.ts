@@ -51,9 +51,13 @@ export class GlobalBuyerController {
     return this.globalBuyerService.getVerificationOverview(req.user.id);
   }
 
-  // Upload verification document (simulate file upload, real implementation would use cloud storage)
+  // Upload verification document (real file upload to Cloudinary)
   @Post('verification/documents/:documentId')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB max for mobile photos
+    },
+  }))
   async uploadVerificationDocument(
     @Param('documentId') documentId: string,
     @UploadedFile() file: Express.Multer.File,

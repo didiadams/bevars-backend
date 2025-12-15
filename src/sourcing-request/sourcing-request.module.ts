@@ -5,6 +5,7 @@ import { SourcingRequest } from './entities/sourcing-request.entity';
 import { SourcingRequestRepository } from './repositories/sourcing-request.repository';
 import { CommonModule } from '../common/common.module';
 import { GlobalBuyerModule } from '../global-buyer/global-buyer.module';
+import { ExporterModule } from '../exporter/exporter.module';
 import { SourcingRequestController } from './sourcing-request.controller';
 import { SourcingRequestService } from './sourcing-request.service';
 
@@ -13,6 +14,7 @@ import { SourcingRequestService } from './sourcing-request.service';
     TypeOrmModule.forFeature([SourcingRequest]),
     CommonModule,
     forwardRef(() => GlobalBuyerModule),
+    forwardRef(() => ExporterModule),
   ],
   controllers: [SourcingRequestController],
   providers: [SourcingRequestService],

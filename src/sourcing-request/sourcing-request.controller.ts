@@ -29,6 +29,7 @@ export class SourcingRequestController {
     @Query('maxBudget') maxBudget?: number,
     @Query('urgency') urgency?: string,
     @Query('search') search?: string,
+    @Request() req?,
   ) {
     return this.sourcingRequestService.findAll({
       page,
@@ -39,6 +40,7 @@ export class SourcingRequestController {
       maxBudget,
       urgency,
       search,
+      exporterUserId: req?.user?.id, // Pass user ID to filter by their primaryCrops
     });
   }
 

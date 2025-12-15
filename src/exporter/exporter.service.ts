@@ -802,17 +802,37 @@ export class ExporterService {
   async getDashboardRequests(userId: string) {
     const exporter = await this.findByUserId(userId);
     
-    // Get active requests that match exporter's product categories
-    const requests = await this.sourcingRequestRepository.find({
-      where: {
-        status: RequestStatus.ACTIVE,
-        quotationDeadline: MoreThanOrEqual(new Date()),
-        isPublic: true
-      },
-      relations: ['globalBuyer', 'globalBuyer.user', 'offers'],
-      order: { createdAt: 'DESC' },
-      take: 5
-    });
+    // Get exporter's primary crops for filtering
+    const exporterCrops = exporter?.primaryCrops || [];
+    
+    // Build query for active requests
+    let queryBuilder = this.sourcingRequestRepository
+      .createQueryBuilder('request')
+      .leftJoinAndSelect('request.globalBuyer', 'globalBuyer')
+      .leftJoinAndSelect('globalBuyer.user', 'user')
+      .leftJoinAndSelect('request.offers', 'offers')
+      .where('request.status = :status', { status: RequestStatus.ACTIVE })
+      .andWhere('request.quotationDeadline >= :now', { now: new Date() })
+      .andWhere('request.isPublic = :isPublic', { isPublic: true });
+
+    // Filter by exporter's primaryCrops - only show requests matching their crops
+    if (exporterCrops.length > 0) {
+      const cropConditions = exporterCrops.map((_, index) => 
+        `LOWER(request.productName) LIKE LOWER(:crop${index})`
+      ).join(' OR ');
+      
+      const cropParams = exporterCrops.reduce((acc, crop, index) => {
+        acc[`crop${index}`] = `%${crop.replace(/_/g, ' ')}%`;
+        return acc;
+      }, {} as Record<string, string>);
+      
+      queryBuilder.andWhere(`(${cropConditions})`, cropParams);
+    }
+
+    const requests = await queryBuilder
+      .orderBy('request.createdAt', 'DESC')
+      .take(5)
+      .getMany();
 
     // For each request, check if current exporter has submitted an offer
     const requestsWithOfferInfo = await Promise.all(
