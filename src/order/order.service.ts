@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, forwardRef, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { OrderRepository } from './repositories/order.repository';
 import { Order, OrderStatus, OrderType } from './entities/order.entity';
@@ -9,9 +9,12 @@ import { OfferService } from '../offer/offer.service';
 import { Offer, OfferStatus } from '../offer/entities/offer.entity';
 import { ExporterService } from '../exporter/exporter.service';
 import { GlobalBuyerService } from '../global-buyer/global-buyer.service';
+import { EscrowService } from '../payment/services/escrow.service';
 
 @Injectable()
 export class OrderService {
+  private readonly logger = new Logger(OrderService.name);
+
   constructor(
     private readonly orderRepository: OrderRepository,
     @Inject(forwardRef(() => OfferService))
@@ -22,6 +25,8 @@ export class OrderService {
     private readonly globalBuyerService: GlobalBuyerService,
     private readonly orderDocumentRepository: OrderDocumentRepository,
     private readonly orderReviewRepository: OrderReviewRepository,
+    @Inject(forwardRef(() => EscrowService))
+    private readonly escrowService: EscrowService,
   ) {}
 
   // Define required documents for each status transition (documents must be uploaded by exporter)
@@ -331,6 +336,38 @@ export class OrderService {
     // Validate targetStatus is one that requires approval
     if (!this.isApprovalRequired(targetStatus)) {
       throw new BadRequestException('Status does not require buyer approval');
+    }
+
+    // ===== PAYMENT VALIDATION: Escrow must be funded before requesting approval =====
+    try {
+      const escrow = await this.escrowService.getByOrderId(order.id);
+      
+      if (!escrow) {
+        throw new BadRequestException({
+          message: 'Payment required: Escrow account not found. Order must be confirmed and funded before requesting approval.',
+          code: 'ESCROW_NOT_FOUND',
+          targetStatus,
+        });
+      }
+
+      const fundedStatuses = ['funded', 'partially_released', 'released'];
+      if (!fundedStatuses.includes(escrow.status)) {
+        throw new BadRequestException({
+          message: 'Payment required: The buyer must fund the escrow before you can request approval for this milestone.',
+          code: 'ESCROW_NOT_FUNDED',
+          targetStatus,
+          escrowStatus: escrow.status,
+          fundedAmount: escrow.fundedAmount,
+          totalAmount: escrow.totalAmount,
+        });
+      }
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error(`Failed to check escrow status for approval request on order ${order.id}: ${error.message}`);
+      throw new BadRequestException({
+        message: 'Unable to verify payment status. Please try again.',
+        code: 'ESCROW_CHECK_FAILED',
+      });
     }
 
     // Ensure required documents are present for that status
@@ -741,6 +778,17 @@ export class OrderService {
   }
 
   async findOne(id: string, userId?: string): Promise<Order> {
+    // Validate ID before querying to prevent "invalid input syntax for type uuid" errors
+    if (!id || id === 'undefined' || id === 'null') {
+      throw new NotFoundException('Order ID is required');
+    }
+
+    // Basic UUID format validation (UUID v4)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      throw new NotFoundException('Invalid order ID format');
+    }
+
     const order = await this.orderRepository.findOne({
       where: { id },
       relations: ['offer', 'globalBuyer', 'globalBuyer.user', 'exporter', 'exporter.user'],
@@ -868,6 +916,55 @@ export class OrderService {
       throw new ForbiddenException('Only exporter can change order to this status');
     }
 
+    // ===== PAYMENT VALIDATION: Escrow must be funded before production/shipment =====
+    // Orders cannot progress beyond CONFIRMED until the buyer has funded the escrow.
+    // This ensures the exporter doesn't start production without payment secured.
+    const paymentRequiredStatuses = [
+      OrderStatus.IN_PRODUCTION,
+      OrderStatus.READY_FOR_SHIPMENT,
+      OrderStatus.SHIPPED,
+      OrderStatus.DELIVERED,
+    ];
+
+    if (paymentRequiredStatuses.includes(status)) {
+      try {
+        const escrow = await this.escrowService.getByOrderId(order.id);
+        
+        if (!escrow) {
+          throw new BadRequestException({
+            message: 'Payment required: Escrow account not found for this order. Order must be confirmed first.',
+            code: 'ESCROW_NOT_FOUND',
+            status,
+          });
+        }
+
+        // Check if escrow is funded (status should be 'funded', 'partially_released', or 'released')
+        const fundedStatuses = ['funded', 'partially_released', 'released'];
+        if (!fundedStatuses.includes(escrow.status)) {
+          throw new BadRequestException({
+            message: 'Payment required: The buyer must fund the escrow before the order can proceed to production.',
+            code: 'ESCROW_NOT_FUNDED',
+            status,
+            escrowStatus: escrow.status,
+            escrowId: escrow.id,
+            fundedAmount: escrow.fundedAmount,
+            totalAmount: escrow.totalAmount,
+          });
+        }
+      } catch (error) {
+        // Re-throw BadRequestException as-is; wrap other errors
+        if (error instanceof BadRequestException) {
+          throw error;
+        }
+        this.logger.error(`Failed to check escrow status for order ${order.id}: ${error.message}`);
+        throw new BadRequestException({
+          message: 'Unable to verify payment status. Please try again or contact support.',
+          code: 'ESCROW_CHECK_FAILED',
+          status,
+        });
+      }
+    }
+
     // Validate required documents for the target status
     const required = this.requiredDocsForStatus[status] ?? [];
     if (required.length > 0) {
@@ -912,7 +1009,50 @@ export class OrderService {
         break;
     }
 
-    return this.orderRepository.save(order);
+    // Save the order first
+    const savedOrder = await this.orderRepository.save(order);
+
+    // Create escrow account when order is confirmed (buyer commits to payment)
+    if (status === OrderStatus.CONFIRMED) {
+      try {
+        // Load full order with relations for escrow creation
+        const fullOrder = await this.orderRepository.findOne({
+          where: { id: savedOrder.id },
+          relations: ['globalBuyer', 'globalBuyer.user', 'exporter', 'exporter.user'],
+        });
+
+        if (fullOrder && fullOrder.globalBuyer && fullOrder.exporter) {
+          const buyer = fullOrder.globalBuyer;
+          const buyerUser = buyer.user;
+
+          // Check if escrow already exists for this order
+          const existingEscrow = await this.escrowService.getByOrderId(fullOrder.id);
+          
+          if (!existingEscrow) {
+            await this.escrowService.createEscrow({
+              orderId: fullOrder.id,
+              buyerId: buyer.id,
+              exporterId: fullOrder.exporter.id,
+              totalAmount: Number(fullOrder.totalAmount),
+              currency: fullOrder.currency || 'USD',
+              buyerEmail: buyerUser?.email || '',
+              buyerFirstName: buyerUser?.firstName || 'Buyer',
+              buyerLastName: buyerUser?.lastName || '',
+            });
+            this.logger.log(`Created escrow for order ${fullOrder.id}`);
+          } else {
+            this.logger.log(`Escrow already exists for order ${fullOrder.id}`);
+          }
+        }
+      } catch (error) {
+        // Log error but don't fail the order confirmation
+        this.logger.error(`Failed to create escrow for order ${savedOrder.id}: ${error.message}`, error.stack);
+        // We don't throw here - order confirmation should still succeed
+        // Escrow can be created manually by admin if needed
+      }
+    }
+
+    return savedOrder;
   }
 
   async cancel(id: string, userId: string, reason?: string): Promise<Order> {

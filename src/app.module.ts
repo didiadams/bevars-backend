@@ -18,6 +18,7 @@ import { ChatModule } from './chat/chat.module';
 import { MarketTrendsModule } from './market-trends/market-trends.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { MailModule } from './mail/mail.module';
+import { PaymentModule } from './payment/payment.module';
 
 
 // {
@@ -56,6 +57,7 @@ import { MailModule } from './mail/mail.module';
     CommonModule,
     CloudinaryModule,
     MailModule,
+    PaymentModule,
   ],
   controllers: [AppController],
   providers: [AppService],

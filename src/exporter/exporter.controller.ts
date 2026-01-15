@@ -237,4 +237,51 @@ export class ExporterController {
   ) {
     return this.exporterService.rateExporter(exporterId, req.user.id, ratingDto);
   }
+
+  // ============ BANK DETAILS ============
+
+  @Get('my-bank-details')
+  async getMyBankDetails(@Request() req) {
+    const exporter = await this.exporterService.findByUserId(req.user.id);
+    return {
+      success: true,
+      data: {
+        bankName: exporter.bankName || null,
+        bankCode: exporter.bankCode || null,
+        accountNumber: exporter.accountNumber || null,
+        accountName: exporter.accountName || null,
+        bankVerified: exporter.bankVerified || false,
+      },
+    };
+  }
+
+  @Patch('bank-details')
+  async updateBankDetails(
+    @Body() bankDetails: {
+      bankName: string;
+      bankCode: string;
+      accountNumber: string;
+      accountName: string;
+    },
+    @Request() req
+  ) {
+    const exporter = await this.exporterService.findByUserId(req.user.id);
+    const updated = await this.exporterService.update(exporter.id, {
+      bankName: bankDetails.bankName,
+      bankCode: bankDetails.bankCode,
+      accountNumber: bankDetails.accountNumber,
+      accountName: bankDetails.accountName,
+      bankVerified: true, // Mark as verified since this comes after account verification
+    });
+    return {
+      success: true,
+      data: {
+        bankName: updated.bankName,
+        bankCode: updated.bankCode,
+        accountNumber: updated.accountNumber,
+        accountName: updated.accountName,
+        bankVerified: updated.bankVerified,
+      },
+    };
+  }
 }

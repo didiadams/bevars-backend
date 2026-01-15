@@ -149,6 +149,22 @@ export class Exporter {
   })
   primaryCrops: string[];
 
+  // Bank details for payout
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  bankName: string;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  bankCode: string;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  accountNumber: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  accountName: string;
+
+  @Column({ type: 'boolean', default: false })
+  bankVerified: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 
