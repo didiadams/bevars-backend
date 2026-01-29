@@ -150,7 +150,7 @@ export class PaymentController {
     // Get buyer info
     const buyer = req.user.globalBuyer;
     const frontendUrl = process.env.FRONTEND_URL || 'https://bevars.com';
-    const redirectUrl = `${frontendUrl}/dashboard/global-buyer/orders/${escrow.orderId}?payment_status=success`;
+    const redirectUrl = `${frontendUrl}/dashboard/global-buyer/order/${escrow.orderId}?payment_status=success`;
 
     try {
       const paymentLink = await this.flutterwaveService.createPaymentLink({
@@ -200,5 +200,74 @@ export class PaymentController {
     });
 
     return this.responseService.sendSuccess('Payouts retrieved', result);
+  }
+
+  /**
+   * Verify payment after redirect from Flutterwave
+   * This is a backup in case webhook hasn't arrived yet
+   */
+  @Get('verify-redirect/:transactionId')
+  async verifyPaymentRedirect(
+    @Param('transactionId') transactionId: string,
+    @Query('tx_ref') txRef: string,
+  ) {
+    try {
+      // Verify with Flutterwave
+      const verification = await this.flutterwaveService.verifyTransaction(transactionId);
+      
+      if (verification.data?.status !== 'successful') {
+        return this.responseService.sendError('Payment not successful', HttpStatus.BAD_REQUEST);
+      }
+
+      // Extract orderId from tx_ref (format: BEV-ESC-{orderId-prefix}-{timestamp}-card-{timestamp})
+      // e.g., BEV-ESC-cfa6dff8-1768834268425-card-1768835060687
+      const txRefMatch = txRef.match(/BEV-ESC-([a-f0-9-]+)-/);
+      if (!txRefMatch) {
+        return this.responseService.sendError('Invalid transaction reference', HttpStatus.BAD_REQUEST);
+      }
+
+      // Find escrow by the flutterwave order ref pattern
+      const escrow = await this.escrowService.findByTxRefPattern(txRef);
+      if (!escrow) {
+        return this.responseService.sendError('Escrow not found', HttpStatus.NOT_FOUND);
+      }
+
+      // Check if already funded
+      if (['funded', 'partially_released', 'released'].includes(escrow.status)) {
+        return this.responseService.sendSuccess('Payment already verified', {
+          status: 'already_funded',
+          escrow: {
+            id: escrow.id,
+            status: escrow.status,
+            fundedAmount: escrow.fundedAmount,
+            totalAmount: escrow.totalAmount,
+          },
+        });
+      }
+
+      // Record the deposit (in case webhook hasn't arrived yet)
+      await this.escrowService.recordDeposit(
+        escrow.id,
+        verification.data.amount,
+        verification.data.flw_ref,
+        transactionId,
+      );
+
+      // Refresh escrow data
+      const updatedEscrow = await this.escrowService.getEscrowDetails(escrow.id);
+
+      return this.responseService.sendSuccess('Payment verified and recorded', {
+        status: 'success',
+        escrow: {
+          id: updatedEscrow.id,
+          status: updatedEscrow.status,
+          fundedAmount: updatedEscrow.fundedAmount,
+          totalAmount: updatedEscrow.totalAmount,
+        },
+      });
+    } catch (error) {
+      console.error('Payment verification failed:', error);
+      return this.responseService.sendError('Payment verification failed', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 }

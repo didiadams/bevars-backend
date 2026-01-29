@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { EscrowAccount, EscrowStatus } from '../entities/escrow-account.entity';
@@ -6,6 +6,7 @@ import { EscrowTransaction, TransactionType, TransactionStatus, TransactionTrigg
 import { OrderMilestone, MilestoneType, MilestoneStatus } from '../entities/order-milestone.entity';
 import { PayoutRecord, PayoutStatus } from '../entities/payout-record.entity';
 import { FlutterwaveService } from './flutterwave.service';
+import { PayoutService } from './payout.service';
 import { Order, OrderStatus } from '../../order/entities/order.entity';
 import { GlobalBuyer } from '../../global-buyer/entities/global-buyer.entity';
 import { Exporter } from '../../exporter/entities/exporter.entity';
@@ -49,6 +50,8 @@ export class EscrowService {
     @InjectRepository(Exporter)
     private exporterRepo: Repository<Exporter>,
     private flutterwaveService: FlutterwaveService,
+    @Inject(forwardRef(() => PayoutService))
+    private payoutService: PayoutService,
     private dataSource: DataSource,
   ) {}
 
@@ -354,6 +357,23 @@ export class EscrowService {
       await queryRunner.commitTransaction();
       this.logger.log(`Released ${releaseAmount} for milestone ${milestoneId}`);
 
+      // Auto-process payout to send money directly to exporter's bank
+      // This runs after the transaction commits to avoid holding the transaction open
+      if (savedPayout.bankCode && savedPayout.accountNumber) {
+        setImmediate(async () => {
+          try {
+            this.logger.log(`Auto-processing payout ${savedPayout.id} for milestone ${milestoneId}`);
+            await this.payoutService.processPayout(savedPayout.id);
+            this.logger.log(`Payout ${savedPayout.id} processed successfully`);
+          } catch (payoutError) {
+            this.logger.error(`Auto-payout failed for ${savedPayout.id}: ${payoutError.message}. Will require manual processing.`);
+            // Payout stays in PENDING/FAILED status, can be retried via admin dashboard
+          }
+        });
+      } else {
+        this.logger.warn(`Payout ${savedPayout.id} created but exporter has no bank details. Manual processing required.`);
+      }
+
       return {
         success: true,
         transaction,
@@ -482,6 +502,20 @@ export class EscrowService {
   async getByOrderId(orderId: string): Promise<EscrowAccount | null> {
     return this.escrowAccountRepo.findOne({
       where: { orderId },
+      relations: ['transactions', 'buyer', 'exporter'],
+    });
+  }
+
+  /**
+   * Find escrow by tx_ref pattern (for payment verification after redirect)
+   * tx_ref format: BEV-ESC-{orderId-prefix}-{timestamp}-card-{timestamp}
+   */
+  async findByTxRefPattern(txRef: string): Promise<EscrowAccount | null> {
+    // Extract the base tx_ref (without -card-timestamp suffix)
+    const baseRef = txRef.replace(/-card-\d+$/, '');
+    
+    return this.escrowAccountRepo.findOne({
+      where: { flutterwaveOrderRef: baseRef },
       relations: ['transactions', 'buyer', 'exporter'],
     });
   }

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, Patch, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, Patch, UploadedFile, UseInterceptors, NotFoundException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ExporterService } from './exporter.service';
 import { CreateExporterDto } from './dto/create-exporter.dto';
@@ -214,35 +214,27 @@ export class ExporterController {
     });
   }
 
-  @Get(':exporterId/offers')
-  async getExporterOffers(@Param('exporterId') exporterId: string) {
-    return this.exporterService.getExporterOffers(exporterId);
-  }
-
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.exporterService.findOne(id);
-  }
-
-  @Get(':id/stats')
-  async getExporterStats(@Param('id') id: string) {
-    return this.exporterService.getExporterStats(id);
-  }
-
-  @Post(':id/rate')
-  async rateExporter(
-    @Param('id') exporterId: string,
-    @Body() ratingDto: { rating: number; comment?: string },
-    @Request() req
-  ) {
-    return this.exporterService.rateExporter(exporterId, req.user.id, ratingDto);
-  }
-
   // ============ BANK DETAILS ============
+  // Note: These routes must come BEFORE :id routes to avoid "my-bank-details" being parsed as a UUID
 
   @Get('my-bank-details')
   async getMyBankDetails(@Request() req) {
-    const exporter = await this.exporterService.findByUserId(req.user.id);
+    const exporter = await this.exporterService.findByUserIdOptional(req.user.id);
+    
+    // Return empty bank details if exporter profile doesn't exist yet
+    if (!exporter) {
+      return {
+        success: true,
+        data: {
+          bankName: null,
+          bankCode: null,
+          accountNumber: null,
+          accountName: null,
+          bankVerified: false,
+        },
+      };
+    }
+    
     return {
       success: true,
       data: {
@@ -265,7 +257,12 @@ export class ExporterController {
     },
     @Request() req
   ) {
-    const exporter = await this.exporterService.findByUserId(req.user.id);
+    const exporter = await this.exporterService.findByUserIdOptional(req.user.id);
+    
+    if (!exporter) {
+      throw new NotFoundException('You must complete your exporter profile before adding bank details');
+    }
+    
     const updated = await this.exporterService.update(exporter.id, {
       bankName: bankDetails.bankName,
       bankCode: bankDetails.bankCode,
@@ -283,5 +280,32 @@ export class ExporterController {
         bankVerified: updated.bankVerified,
       },
     };
+  }
+
+  // ============ PARAMETERIZED ROUTES ============
+  // Note: These routes must come AFTER specific string routes
+
+  @Get(':exporterId/offers')
+  async getExporterOffers(@Param('exporterId') exporterId: string) {
+    return this.exporterService.getExporterOffers(exporterId);
+  }
+
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    return this.exporterService.findOne(id);
+  }
+
+  @Get(':id/stats')
+  async getExporterStats(@Param('id') id: string) {
+    return this.exporterService.getExporterStats(id);
+  }
+
+  @Post(':id/rate')
+  async rateExporter(
+    @Param('id') exporterId: string,
+    @Body() ratingDto: { rating: number; comment?: string },
+    @Request() req
+  ) {
+    return this.exporterService.rateExporter(exporterId, req.user.id, ratingDto);
   }
 }

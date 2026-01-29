@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 
@@ -233,6 +233,17 @@ export class FlutterwaveService {
    * Verify bank account (get account name)
    */
   async verifyBankAccount(params: VerifyAccountParams): Promise<VerifyAccountResponse> {
+    // Validate inputs
+    if (!params.accountNumber || !params.bankCode) {
+      throw new BadRequestException('Account number and bank code are required');
+    }
+
+    // Check if Flutterwave is configured
+    if (!this.secretKey) {
+      this.logger.error('Flutterwave secret key not configured');
+      throw new ServiceUnavailableException('Payment service not configured');
+    }
+
     try {
       const payload = {
         account_number: params.accountNumber,
@@ -245,7 +256,13 @@ export class FlutterwaveService {
       return response.data;
     } catch (error) {
       this.logger.error(`Failed to verify bank account: ${error.message}`, error.response?.data);
-      throw error;
+      
+      // Handle Flutterwave API errors
+      if (error.response?.data?.message) {
+        throw new BadRequestException(error.response.data.message);
+      }
+      
+      throw new ServiceUnavailableException('Unable to verify bank account. Please try again later.');
     }
   }
 

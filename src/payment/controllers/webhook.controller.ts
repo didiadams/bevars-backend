@@ -111,12 +111,23 @@ export class WebhookController {
     }
 
     // Find escrow by transaction reference
-    const escrow = await this.escrowRepo.findOne({
+    // For card payments, tx_ref format is: BEV-ESC-{orderId}-{timestamp}-card-{timestamp}
+    // For virtual account, tx_ref format is: BEV-ESC-{orderId}-{timestamp}
+    const baseTxRef = data.tx_ref.replace(/-card-\d+$/, ''); // Remove -card-timestamp suffix if present
+    
+    let escrow = await this.escrowRepo.findOne({
       where: { flutterwaveOrderRef: data.tx_ref },
     });
+    
+    // If not found with full tx_ref, try with base ref (for card payments)
+    if (!escrow) {
+      escrow = await this.escrowRepo.findOne({
+        where: { flutterwaveOrderRef: baseTxRef },
+      });
+    }
 
     if (!escrow) {
-      this.logger.warn(`Escrow not found for tx_ref: ${data.tx_ref}`);
+      this.logger.warn(`Escrow not found for tx_ref: ${data.tx_ref} (base: ${baseTxRef})`);
       return;
     }
 

@@ -103,13 +103,27 @@ export class ExporterService {
   }
 
   async findByUserId(userId: string): Promise<Exporter> {
+    const exporter = await this.findByUserIdOptional(userId);
+
+    if (!exporter) {
+      throw new NotFoundException(`Exporter for user ID ${userId} not found`);
+    }
+
+    return exporter;
+  }
+
+  /**
+   * Find exporter by user ID without throwing an exception.
+   * Returns null if not found.
+   */
+  async findByUserIdOptional(userId: string): Promise<Exporter | null> {
     const exporter = await this.exporterRepository.findOne({
       where: { user: { id: userId } },
       relations: ['user', 'offers'],
     });
 
     if (!exporter) {
-      throw new NotFoundException(`Exporter for user ID ${userId} not found`);
+      return null;
     }
 
     if (exporter && exporter.user) {

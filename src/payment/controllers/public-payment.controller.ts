@@ -5,6 +5,7 @@ import {
   Query,
   Body,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { FlutterwaveService } from '../services/flutterwave.service';
 import { ResponseService } from '../../common/services/response.service';
 
@@ -14,10 +15,17 @@ import { ResponseService } from '../../common/services/response.service';
  */
 @Controller('payment')
 export class PublicPaymentController {
+  private isTestMode: boolean;
+
   constructor(
     private flutterwaveService: FlutterwaveService,
     private responseService: ResponseService,
-  ) {}
+    private configService: ConfigService,
+  ) {
+    // Check if using Flutterwave test keys
+    const secretKey = this.configService.get<string>('FLW_SECRET_KEY') || '';
+    this.isTestMode = secretKey.includes('_TEST');
+  }
 
   /**
    * Get Nigerian banks list (for exporter bank setup)
@@ -32,12 +40,24 @@ export class PublicPaymentController {
   /**
    * Verify bank account name
    * Public endpoint - no auth required
+   * In test mode, returns mock data since Flutterwave test only allows bank 044
    */
   @Post('verify-account')
   async verifyBankAccount(
     @Body('accountNumber') accountNumber: string,
     @Body('bankCode') bankCode: string,
   ) {
+    // In test mode, mock the verification to allow development
+    if (this.isTestMode) {
+      // Return a mock verified account for testing
+      const mockAccountName = `Test Account ${accountNumber.slice(-4)}`;
+      return this.responseService.sendSuccess('Account verified (test mode)', {
+        account_number: accountNumber,
+        account_name: mockAccountName,
+        bank_code: bankCode,
+      });
+    }
+
     const result = await this.flutterwaveService.verifyBankAccount({
       accountNumber,
       bankCode,
