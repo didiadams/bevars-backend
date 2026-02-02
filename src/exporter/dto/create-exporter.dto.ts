@@ -1,4 +1,4 @@
-import { IsString, IsArray, IsOptional, IsEmail, IsPhoneNumber, ValidateNested } from 'class-validator';
+import { IsString, IsArray, IsOptional, IsEmail, IsPhoneNumber, ValidateNested, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateExporterDto {
@@ -59,4 +59,25 @@ export class CreateExporterDto {
   @IsOptional()
   @IsString()
   taxIdNumber?: string;
+
+  // Bank details
+  @IsOptional()
+  @IsString()
+  bankName?: string;
+
+  @IsOptional()
+  @IsString()
+  bankCode?: string;
+
+  @IsOptional()
+  @IsString()
+  accountNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  accountName?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  bankVerified?: boolean;
 }

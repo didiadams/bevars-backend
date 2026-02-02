@@ -461,69 +461,98 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
   let buyers: any[] = [];
   let buyersCount = 0;
 
-  // If a status filter is provided, fetch buyers based on matching verification documents
-  if (status) {
-    const statuses = Array.isArray(status) ? status : status.split(',');
+  // Valid document statuses (from VerificationDocument entity enum)
+  const validDocStatuses = ['pending', 'under_review', 'approved', 'rejected'];
+  // Valid buyer statuses (from GlobalBuyer entity)
+  const validBuyerStatuses = ['not_started', 'in_progress', 'submitted', 'under_review', 'approved', 'rejected'];
 
-    // Find documents matching the requested statuses and include buyer + user
-    const matchedDocs = await this.verificationDocRepository
-      .createQueryBuilder('doc')
-      .leftJoinAndSelect('doc.buyer', 'buyer')
-      .leftJoinAndSelect('buyer.user', 'user')
-      .where('doc.status IN (:...statuses)', { statuses })
-      .getMany();
+  try {
+    // If a status filter is provided, fetch buyers based on matching verification documents
+    if (status) {
+      const requestedStatuses = Array.isArray(status) ? status : status.split(',');
+      
+      // Separate statuses for document query vs buyer query
+      const docStatuses = requestedStatuses.filter(s => validDocStatuses.includes(s));
+      const buyerStatuses = requestedStatuses.filter(s => validBuyerStatuses.includes(s));
 
-    // Group documents by buyer id
-    const buyerMap = new Map<string, any>();
-    for (const d of matchedDocs) {
-      if (!d.buyer) continue;
-      const bId = d.buyer.id;
-      if (!buyerMap.has(bId)) {
-        buyerMap.set(bId, { buyer: d.buyer, docs: [] });
+      const buyerMap = new Map<string, any>();
+
+      // Find documents matching the requested statuses (only if we have valid doc statuses)
+      if (docStatuses.length > 0) {
+        const matchedDocs = await this.verificationDocRepository
+          .createQueryBuilder('doc')
+          .leftJoinAndSelect('doc.buyer', 'buyer')
+          .leftJoinAndSelect('buyer.user', 'user')
+          .where('doc.status IN (:...docStatuses)', { docStatuses })
+          .getMany();
+
+        // Group documents by buyer id
+        for (const d of matchedDocs) {
+          if (!d.buyer) continue;
+          const bId = d.buyer.id;
+          if (!buyerMap.has(bId)) {
+            buyerMap.set(bId, { buyer: d.buyer, docs: [] });
+          }
+          buyerMap.get(bId).docs.push(d);
+        }
       }
-      buyerMap.get(bId).docs.push(d);
+
+      // Also include buyers whose global buyer.status matches the requested statuses
+      if (buyerStatuses.length > 0) {
+        const buyersByStatus = await this.globalBuyerRepository
+          .createQueryBuilder('buyer')
+          .leftJoinAndSelect('buyer.user', 'user')
+          .leftJoinAndSelect('buyer.verificationDocuments', 'docs')
+          .where('buyer.status IN (:...buyerStatuses)', { buyerStatuses })
+          .getMany();
+
+        for (const b of buyersByStatus) {
+          if (!buyerMap.has(b.id)) {
+            buyerMap.set(b.id, { buyer: b, docs: b.verificationDocuments || [] });
+          }
+        }
+      }
+
+      // Convert to array of buyers (do NOT apply per-entity pagination here)
+      const allBuyerEntries = Array.from(buyerMap.values()).map((entry) => ({ buyer: entry.buyer, docs: entry.docs }));
+      buyersCount = allBuyerEntries.length;
+
+      // Attach verificationDocuments for later normalization step
+      buyers = allBuyerEntries.map((entry) => ({ ...entry.buyer, verificationDocuments: entry.docs }));
+    } else {
+      const qbBuyer = this.globalBuyerRepository.createQueryBuilder('buyer')
+        .leftJoinAndSelect('buyer.user', 'user')
+        .leftJoinAndSelect('buyer.verificationDocuments', 'documents')
+        .skip((page - 1) * limit)
+        .take(limit);
+
+      const result = await qbBuyer.getManyAndCount();
+      buyers = result[0];
+      buyersCount = result[1];
     }
 
-    // Also include buyers whose global buyer.status matches the requested statuses
-    const buyersByStatus = await this.globalBuyerRepository.find({
-      where: { status: In(statuses) },
-      relations: ['user', 'verificationDocuments'],
-    });
-
-    for (const b of buyersByStatus) {
-      if (!buyerMap.has(b.id)) {
-        buyerMap.set(b.id, { buyer: b, docs: b.verificationDocuments || [] });
-      }
-    }
-
-    // Convert to array of buyers (do NOT apply per-entity pagination here)
-    const allBuyerEntries = Array.from(buyerMap.values()).map((entry) => ({ buyer: entry.buyer, docs: entry.docs }));
-    buyersCount = allBuyerEntries.length;
-
-    // Attach verificationDocuments for later normalization step
-    buyers = allBuyerEntries.map((entry) => ({ ...entry.buyer, verificationDocuments: entry.docs }));
-  } else {
-    const qbBuyer = this.globalBuyerRepository.createQueryBuilder('buyer')
-      .leftJoinAndSelect('buyer.user', 'user')
-      .leftJoinAndSelect('buyer.verificationDocuments', 'documents')
-      .skip((page - 1) * limit)
-      .take(limit);
-
-    const result = await qbBuyer.getManyAndCount();
-    buyers = result[0];
-    buyersCount = result[1];
-  }
+  // Valid exporter verification statuses
+  const validExporterStatuses = ['pending', 'under_review', 'approved', 'rejected'];
 
   const qbExporter = this.exporterRepository.createQueryBuilder('exporter')
     .leftJoinAndSelect('exporter.user', 'user');
 
   if (status) {
-    const statuses = Array.isArray(status) ? status : status.split(',');
-    qbExporter.andWhere('exporter.verificationStatus IN (:...statuses)', { statuses });
-    // When status filter is present we'll fetch the full set and apply unified pagination later
-    const [exportersFull] = await qbExporter.getManyAndCount();
-    var exportersList = exportersFull;
-    var exportersCount = exportersList.length;
+    const requestedStatuses = Array.isArray(status) ? status : status.split(',');
+    // Filter to only valid exporter statuses
+    const exporterStatuses = requestedStatuses.filter(s => validExporterStatuses.includes(s));
+    
+    if (exporterStatuses.length > 0) {
+      qbExporter.andWhere('exporter.verificationStatus IN (:...exporterStatuses)', { exporterStatuses });
+      // When status filter is present we'll fetch the full set and apply unified pagination later
+      const [exportersFull] = await qbExporter.getManyAndCount();
+      var exportersList = exportersFull;
+      var exportersCount = exportersList.length;
+    } else {
+      // No valid exporter statuses requested, return empty
+      var exportersList = [] as typeof exportersList;
+      var exportersCount = 0;
+    }
   } else {
     qbExporter.skip((page - 1) * limit).take(limit);
     const [exporters, exportersCountTemp] = await qbExporter.getManyAndCount();
@@ -603,6 +632,10 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
       totalPages: Math.ceil((buyersCount + exportersCount) / limit),
     },
   };
+  } catch (error) {
+    console.error('Error fetching verification documents:', error);
+    throw error;
+  }
 }
 
   // Get all pending documents (both buyer and exporter)

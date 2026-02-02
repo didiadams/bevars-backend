@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, Patch, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, Patch, UploadedFile, UseInterceptors, NotFoundException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ExporterService } from './exporter.service';
 import { CreateExporterDto } from './dto/create-exporter.dto';
@@ -213,6 +213,77 @@ export class ExporterController {
       search,
     });
   }
+
+  // ============ BANK DETAILS ============
+  // Note: These routes must come BEFORE :id routes to avoid "my-bank-details" being parsed as a UUID
+
+  @Get('my-bank-details')
+  async getMyBankDetails(@Request() req) {
+    const exporter = await this.exporterService.findByUserIdOptional(req.user.id);
+    
+    // Return empty bank details if exporter profile doesn't exist yet
+    if (!exporter) {
+      return {
+        success: true,
+        data: {
+          bankName: null,
+          bankCode: null,
+          accountNumber: null,
+          accountName: null,
+          bankVerified: false,
+        },
+      };
+    }
+    
+    return {
+      success: true,
+      data: {
+        bankName: exporter.bankName || null,
+        bankCode: exporter.bankCode || null,
+        accountNumber: exporter.accountNumber || null,
+        accountName: exporter.accountName || null,
+        bankVerified: exporter.bankVerified || false,
+      },
+    };
+  }
+
+  @Patch('bank-details')
+  async updateBankDetails(
+    @Body() bankDetails: {
+      bankName: string;
+      bankCode: string;
+      accountNumber: string;
+      accountName: string;
+    },
+    @Request() req
+  ) {
+    const exporter = await this.exporterService.findByUserIdOptional(req.user.id);
+    
+    if (!exporter) {
+      throw new NotFoundException('You must complete your exporter profile before adding bank details');
+    }
+    
+    const updated = await this.exporterService.update(exporter.id, {
+      bankName: bankDetails.bankName,
+      bankCode: bankDetails.bankCode,
+      accountNumber: bankDetails.accountNumber,
+      accountName: bankDetails.accountName,
+      bankVerified: true, // Mark as verified since this comes after account verification
+    });
+    return {
+      success: true,
+      data: {
+        bankName: updated.bankName,
+        bankCode: updated.bankCode,
+        accountNumber: updated.accountNumber,
+        accountName: updated.accountName,
+        bankVerified: updated.bankVerified,
+      },
+    };
+  }
+
+  // ============ PARAMETERIZED ROUTES ============
+  // Note: These routes must come AFTER specific string routes
 
   @Get(':exporterId/offers')
   async getExporterOffers(@Param('exporterId') exporterId: string) {

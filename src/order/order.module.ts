@@ -14,6 +14,7 @@ import { OfferModule } from '../offer/offer.module';
 import { ExporterModule } from '../exporter/exporter.module';
 import { GlobalBuyerModule } from '../global-buyer/global-buyer.module';
 import { MailModule } from '../mail/mail.module';
+import { PaymentModule } from '../payment/payment.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { MailModule } from '../mail/mail.module';
     forwardRef(() => ExporterModule),
     forwardRef(() => GlobalBuyerModule),
     forwardRef(() => MailModule),
+    forwardRef(() => PaymentModule),
   ],
   controllers: [OrderController],
   providers: [OrderService, OrderRepository, OrderDocumentRepository, OrderReviewRepository, AutoApprovalService, OrderAutomationService],

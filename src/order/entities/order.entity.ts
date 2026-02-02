@@ -33,6 +33,15 @@ export enum OrderType {
   CONTRACT_FARMING = 'contract_farming',
 }
 
+export enum PaymentStatus {
+  PENDING = 'pending',
+  AWAITING_DEPOSIT = 'awaiting_deposit',
+  PARTIALLY_PAID = 'partially_paid',
+  PAID = 'paid',
+  RELEASED = 'released',
+  REFUNDED = 'refunded',
+}
+
 @Entity('order')
 export class Order {
   @PrimaryGeneratedColumn('uuid')
@@ -151,6 +160,17 @@ export class Order {
 
   @Column({ type: 'timestamp', nullable: true })
   disputeResolvedAt: Date;
+
+  // Payment tracking
+  @Column({ type: 'enum', enum: PaymentStatus, default: PaymentStatus.PENDING })
+  paymentStatus: PaymentStatus;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
+  paidAmount: number;
+
+  // Reference to escrow account (if using escrow payment)
+  @Column({ type: 'uuid', nullable: true })
+  escrowAccountId: string;
 
   @CreateDateColumn()
   createdAt: Date;
