@@ -43,6 +43,31 @@ export interface NegotiationNotificationData {
   frontendUrl?: string;
 }
 
+export interface NewUserSignupData {
+  userId: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  companyName?: string;
+  role: 'exporter' | 'global_buyer' | string;
+  countryName?: string;
+  phoneNumber?: string;
+  signupDate: Date;
+}
+
+export interface OnboardingReminderData {
+  userId: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: 'exporter' | 'global_buyer' | string;
+  documentsUploaded: number;
+  totalRequired: number;
+  daysSinceSignup: number;
+  verificationStatus: string;
+  frontendUrl?: string;
+}
+
 
 const generateEmailHtml = (verificationUrl: string, name: string) => `
 <!DOCTYPE html>
@@ -928,5 +953,162 @@ If you did not request a password reset, please ignore this email.`,
         </div>
       </div>
     `;
+  }
+
+  // =============================================
+  // Admin Signup Notification
+  // =============================================
+  private generateAdminNewUserSignupEmail(data: NewUserSignupData): string {
+    const roleLabel = data.role === 'exporter' ? 'Exporter' : 'Global Buyer';
+    const roleColor = data.role === 'exporter' ? '#28a745' : '#007bff';
+    
+    return `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #00313E, #00252F); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h2 style="margin: 0;">🎉 New User Signup</h2>
+        </div>
+        <div style="background: white; padding: 20px; border: 1px solid #e9ecef; border-radius: 0 0 8px 8px;">
+          <p>A new user has registered on the Bevars platform.</p>
+          
+          <div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+            <div style="display: inline-block; background-color: ${roleColor}; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 15px;">
+              ${roleLabel}
+            </div>
+            <p style="margin: 5px 0;"><strong>Name:</strong> ${data.firstName} ${data.lastName}</p>
+            <p style="margin: 5px 0;"><strong>Email:</strong> ${data.email}</p>
+            ${data.companyName ? `<p style="margin: 5px 0;"><strong>Company:</strong> ${data.companyName}</p>` : ''}
+            ${data.countryName ? `<p style="margin: 5px 0;"><strong>Country:</strong> ${data.countryName}</p>` : ''}
+            ${data.phoneNumber ? `<p style="margin: 5px 0;"><strong>Phone:</strong> ${data.phoneNumber}</p>` : ''}
+            <p style="margin: 5px 0;"><strong>Signup Date:</strong> ${data.signupDate.toLocaleString()}</p>
+            <p style="margin: 5px 0;"><strong>User ID:</strong> <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-size: 12px;">${data.userId}</code></p>
+          </div>
+
+          <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0;"><strong>⏳ Next Step:</strong> User needs to verify their email and complete document verification before they can fully use the platform.</p>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${this.configService.get<string>('FRONTEND_URL')}/admin/users/${data.userId}" 
+               style="display: inline-block; padding: 12px 24px; background-color: #00313E; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: 500;">View User in Admin</a>
+          </div>
+
+          <p style="color: #6c757d; font-size: 14px;">This is an automated admin notification.</p>
+        </div>
+        <div style="text-align: center; padding: 20px; background-color: #f8f9fa; border-top: 1px solid #e9ecef; font-size: 14px; color: #6c757d;">
+          <p>&copy; ${new Date().getFullYear()} Bevars. Admin Notifications.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  async sendAdminNewUserSignupNotification(data: NewUserSignupData): Promise<boolean> {
+    if (!this.adminEmail) {
+      this.logger.warn('Admin email not configured, skipping signup notification');
+      return false;
+    }
+
+    const roleLabel = data.role === 'exporter' ? 'Exporter' : 'Buyer';
+    return this.sendEmail({
+      email: this.adminEmail,
+      subject: `New ${roleLabel} Signup: ${data.firstName} ${data.lastName} (${data.email})`,
+      html: this.generateAdminNewUserSignupEmail(data),
+      metadata: {
+        type: 'admin-new-user-signup',
+        userId: data.userId,
+        role: data.role,
+      },
+    });
+  }
+
+  // =============================================
+  // Onboarding Reminder Email
+  // =============================================
+  private generateOnboardingReminderEmail(data: OnboardingReminderData): string {
+    const isExporter = data.role === 'exporter';
+    const roleLabel = isExporter ? 'exporter' : 'buyer';
+    const verificationPath = isExporter ? '/exporter-verification' : '/buyer-verification';
+    const dashboardPath = isExporter ? '/dashboard/exporter' : '/dashboard/global-buyer';
+    const progressPercent = Math.round((data.documentsUploaded / data.totalRequired) * 100);
+    
+    const benefits = isExporter 
+      ? [
+          'Submit offers to global buyers',
+          'Access verified buyer network',
+          'Secure payment through escrow',
+          'Build your export reputation',
+        ]
+      : [
+          'Create sourcing requests',
+          'Connect with verified exporters',
+          'Secure transactions via escrow',
+          'Access quality Nigerian products',
+        ];
+
+    return `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #00313E, #00252F); color: white; padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h2 style="margin: 0;">Complete Your Verification</h2>
+          <p style="margin: 10px 0 0 0; opacity: 0.9;">Unlock full access to Bevars</p>
+        </div>
+        <div style="background: white; padding: 30px 20px; border: 1px solid #e9ecef; border-radius: 0 0 8px 8px;">
+          <p>Hi ${data.firstName},</p>
+          <p>We noticed you haven't completed your ${roleLabel} verification yet. You're ${data.documentsUploaded === 0 ? 'just getting started' : 'almost there'}!</p>
+          
+          ${data.documentsUploaded > 0 ? `
+          <div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+            <p style="margin: 0 0 10px 0; font-weight: 600;">Your Progress</p>
+            <div style="background-color: #e9ecef; border-radius: 10px; height: 20px; overflow: hidden;">
+              <div style="background: linear-gradient(135deg, #28a745, #218838); height: 100%; width: ${progressPercent}%; border-radius: 10px;"></div>
+            </div>
+            <p style="margin: 10px 0 0 0; font-size: 14px; color: #6c757d;">${data.documentsUploaded} of ${data.totalRequired} documents uploaded (${progressPercent}%)</p>
+          </div>
+          ` : ''}
+
+          <div style="background-color: #e8f5e8; border-radius: 8px; padding: 20px; margin: 20px 0;">
+            <h3 style="color: #28a745; margin-top: 0;">✅ Benefits of Verification</h3>
+            <ul style="margin: 0; padding-left: 20px; color: #333;">
+              ${benefits.map(b => `<li style="margin: 8px 0;">${b}</li>`).join('')}
+            </ul>
+          </div>
+
+          <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0;"><strong>📄 What you need:</strong> Just ${data.totalRequired} documents - ${isExporter ? 'CAC Certificate and Export License' : 'Company Registration and Business License'}</p>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${data.frontendUrl || this.configService.get<string>('FRONTEND_URL')}${verificationPath}" 
+               style="display: inline-block; padding: 14px 28px; background-color: #28a745; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">Complete Verification Now</a>
+          </div>
+
+          <p>Have questions? Just reply to this email or contact our support team.</p>
+          <p>Best regards,<br>The Bevars Team</p>
+        </div>
+        <div style="text-align: center; padding: 20px; background-color: #f8f9fa; border-top: 1px solid #e9ecef; font-size: 14px; color: #6c757d;">
+          <p style="margin: 0 0 10px 0;">
+            <a href="${data.frontendUrl || this.configService.get<string>('FRONTEND_URL')}${dashboardPath}" style="color: #00313E; text-decoration: none;">Go to Dashboard</a>
+          </p>
+          <p style="margin: 0;">&copy; ${new Date().getFullYear()} Bevars. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  async sendOnboardingReminderEmail(data: OnboardingReminderData): Promise<boolean> {
+    const isExporter = data.role === 'exporter';
+    const progressText = data.documentsUploaded > 0 
+      ? `${data.documentsUploaded}/${data.totalRequired} docs uploaded`
+      : 'Get started today';
+    
+    return this.sendEmail({
+      email: data.email,
+      subject: `${data.firstName}, complete your ${isExporter ? 'exporter' : 'buyer'} verification - ${progressText}`,
+      html: this.generateOnboardingReminderEmail(data),
+      metadata: {
+        type: 'onboarding-reminder',
+        userId: data.userId,
+        role: data.role,
+        daysSinceSignup: data.daysSinceSignup,
+      },
+    });
   }
 }

@@ -1,9 +1,11 @@
 
-export enum VerificationTier {
-  STANDARD = 'standard',
-  PREMIUM = 'premium',
-  ENTERPRISE = 'enterprise',
+// Tiered verification system - allows graduated access based on documents submitted
+export enum BuyerVerificationTier {
+  NONE = 'none',           // No documents uploaded
+  BASIC = 'basic',         // 2 core docs (Company Reg + Tax Reg) - can create requests, send messages
+  FULL = 'full',           // All docs + Admin approved - can place orders with escrow
 }
+
 import { User } from 'src/user/entities/user.entity';
 import {
   Column,
@@ -58,8 +60,10 @@ export class GlobalBuyer {
   @Column({ type: 'varchar', nullable: true })
   creditRating: string;
 
-  @Column({ type: 'enum', enum: VerificationTier, default: VerificationTier.STANDARD, nullable: true })
-  verificationTier: VerificationTier;
+  // Tiered verification - auto-promoted to BASIC when 2 core docs uploaded, FULL when admin approves
+  @Column({ type: 'enum', enum: BuyerVerificationTier, default: BuyerVerificationTier.NONE, nullable: true })
+  verificationTier: BuyerVerificationTier;
+
   @Column({ type: 'varchar', default: 'not_started' })
   status: 'not_started' | 'in_progress' | 'submitted' | 'under_review' | 'approved' | 'rejected';
   // Verification document URLs (one column per type)

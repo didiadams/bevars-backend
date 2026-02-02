@@ -2,8 +2,8 @@ import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { User, UserRole, UserStatus } from '../../user/entities/user.entity';
-import { GlobalBuyer, VerificationTier } from '../../global-buyer/entities/global-buyer.entity';
-import { Exporter, VerificationStatus } from '../../exporter/entities/exporter.entity';
+import { GlobalBuyer, BuyerVerificationTier } from '../../global-buyer/entities/global-buyer.entity';
+import { Exporter, VerificationStatus, ExporterVerificationTier } from '../../exporter/entities/exporter.entity';
 import { VerificationDocument } from '../../common/entities/verification-document.entity';
 import { AdminAuditService } from './admin-audit.service';
 
@@ -170,7 +170,7 @@ export class AdminUserService {
       });
     } else if (user.role === UserRole.GLOBAL_BUYER && user.globalBuyer) {
       await this.globalBuyerRepository.update(user.globalBuyer.id, {
-        verificationTier: isVerified ? VerificationTier.PREMIUM : VerificationTier.STANDARD
+        verificationTier: isVerified ? BuyerVerificationTier.FULL : BuyerVerificationTier.NONE
       });
     }
 
@@ -430,7 +430,7 @@ export class AdminUserService {
       }),
       // Additional counts
       this.exporterRepository.count({ where: { isVerified: true } }),
-      this.globalBuyerRepository.count({ where: { verificationTier: VerificationTier.PREMIUM } }),
+      this.globalBuyerRepository.count({ where: { verificationTier: BuyerVerificationTier.FULL } }),
       this.exporterRepository.count({ where: { verificationStatus: VerificationStatus.PENDING } }),
   this.verificationDocRepository.count({ where: { status: VerificationStatus.PENDING } }),
       this.userRepository.count({ where: { isActive: true } }),
@@ -782,12 +782,13 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
     // Only two valid outcomes: approved or rejected. Use VerificationStatus enum
     if (status === VerificationStatus.APPROVED) {
       // Mirror exporter behavior: mark buyer as approved and record reviewer metadata
+      // Set FULL tier when admin approves
       await this.globalBuyerRepository.update(buyerId, {
         status: VerificationStatus.APPROVED,
         reviewerName: adminId,
         approvedDate: new Date(),
         reviewNotes: 'Documents approved by admin',
-        verificationTier: VerificationTier.PREMIUM,
+        verificationTier: BuyerVerificationTier.FULL,
       });
 
       await this.userRepository.update(buyer.user.id, { isVerified: true });
@@ -830,9 +831,11 @@ async getVerificationDocuments(page = 1, limit = 20, status?: VerificationStatus
     }
   
     if (status === VerificationStatus.APPROVED) {
+      // Set FULL tier when admin approves
       await this.exporterRepository.update(exporterId, { 
         verificationStatus: VerificationStatus.APPROVED,
         isVerified: true,
+        verificationTier: ExporterVerificationTier.FULL,
         verificationReviewedBy: adminId,
         verificationReviewedAt: new Date(),
         verificationNotes: 'Documents approved by admin'

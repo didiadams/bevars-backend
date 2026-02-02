@@ -8,6 +8,7 @@ import { GlobalBuyer } from '../global-buyer/entities/global-buyer.entity';
 import { Exporter } from '../exporter/entities/exporter.entity';
 import { CreateUserDto } from '../user/dto/create-user.dto';
 import { OtpService } from './services/otp.service';
+import { MailService } from '../mail/mail-service.service';
 
 @Injectable()
 export class BetterAuthService {
@@ -20,6 +21,7 @@ export class BetterAuthService {
     private exporterRepository: Repository<Exporter>,
     private jwtService: JwtService,
     private otpService: OtpService,
+    private mailService: MailService,
   ) {}
 
 
@@ -85,6 +87,25 @@ export class BetterAuthService {
         console.error('Failed to send OTP email:', otpError);
         // Don't fail the signup process if OTP email fails
         // User can request resend later
+      }
+
+      // Notify admin about new user signup
+      try {
+        await this.mailService.sendAdminNewUserSignupNotification({
+          userId: savedUser.id,
+          email: savedUser.email,
+          firstName: savedUser.firstName,
+          lastName: savedUser.lastName,
+          companyName: savedUser.companyName,
+          role: savedUser.role,
+          countryName: savedUser.countryName,
+          phoneNumber: savedUser.phoneNumber,
+          signupDate: new Date(),
+        });
+        console.log('Admin notified about new signup:', savedUser.email);
+      } catch (adminEmailError) {
+        console.error('Failed to send admin notification:', adminEmailError);
+        // Don't fail signup if admin email fails
       }
 
       // Remove password from response and include userId for OTP process

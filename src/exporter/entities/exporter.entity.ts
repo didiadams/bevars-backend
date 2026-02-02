@@ -27,7 +27,15 @@ export enum VerificationStatus {
   REJECTED = 'rejected',
 }
 
+// Tiered verification system - allows graduated access based on documents submitted
+export enum ExporterVerificationTier {
+  NONE = 'none',           // No documents uploaded
+  BASIC = 'basic',         // 2 core docs (CAC + Export License) - can view requests, send messages
+  FULL = 'full',           // All docs + Admin approved - can submit offers, full trading access
+}
+
 export enum ExporterCategory {
+  // Agricultural & Food
   AGRICULTURAL_PRODUCTS = 'agricultural_products',
   PROCESSED_FOODS = 'processed_foods',
   SPICES_HERBS = 'spices_herbs',
@@ -36,6 +44,27 @@ export enum ExporterCategory {
   LIVESTOCK_PRODUCTS = 'livestock_products',
   SEAFOOD = 'seafood',
   BEVERAGES = 'beverages',
+  
+  // Manufactured & Finished Goods
+  TEXTILES_FASHION = 'textiles_fashion',
+  LEATHER_GOODS = 'leather_goods',
+  FURNITURE_CRAFTS = 'furniture_crafts',
+  BEAUTY_COSMETICS = 'beauty_cosmetics',
+  
+  // Industrial & Minerals
+  SOLID_MINERALS = 'solid_minerals',
+  INDUSTRIAL_PRODUCTS = 'industrial_products',
+  
+  // Other
+  OTHER = 'other',
+}
+
+// Type of exporter - distinguishes raw material traders from manufacturers
+export enum ExporterType {
+  TRADER = 'trader',                    // Buys and exports raw materials
+  MANUFACTURER = 'manufacturer',        // Produces finished goods for export
+  FARMER_PRODUCER = 'farmer_producer',  // Grows/produces their own products
+  COOPERATIVE = 'cooperative',          // Farmer cooperative/union
 }
 
 @Entity('exporter')
@@ -73,6 +102,10 @@ export class Exporter {
   @Column({ type: 'enum', enum: VerificationStatus, default: VerificationStatus.PENDING })
   verificationStatus: VerificationStatus;
 
+  // Tiered verification - auto-promoted to BASIC when 2 core docs uploaded, FULL when admin approves
+  @Column({ type: 'enum', enum: ExporterVerificationTier, default: ExporterVerificationTier.NONE })
+  verificationTier: ExporterVerificationTier;
+
   @Column({
     type: 'boolean',
     default: false,
@@ -87,6 +120,10 @@ export class Exporter {
 
   @Column({ nullable: true })
   verificationNotes: string;
+
+  // Type of exporter (trader, manufacturer, farmer, cooperative)
+  @Column({ type: 'enum', enum: ExporterType, default: ExporterType.TRADER, nullable: true })
+  exporterType: ExporterType;
 
   @Column({
     type: 'simple-array',

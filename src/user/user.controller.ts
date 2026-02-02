@@ -17,10 +17,14 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { FarmerOnboardingDto } from './dto/create-onboarding.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OnboardingReminderService } from './services/onboarding-reminder.service';
 
 @Controller('user')
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly onboardingReminderService: OnboardingReminderService,
+  ) {}
 
   @Get('notification-preferences')
   @UseGuards(JwtAuthGuard)
@@ -44,5 +48,12 @@ export class UserController {
   async sendTestNotification(@Request() req, @Body() body: { type: string }) {
     const success = await this.userService.sendTestNotification(req.user.id, body.type);
     return { success };
+  }
+
+  @Post('send-onboarding-reminder')
+  @UseGuards(JwtAuthGuard)
+  async sendOnboardingReminder(@Request() req) {
+    const success = await this.onboardingReminderService.triggerManualReminder(req.user.id);
+    return { success, message: 'Onboarding reminder email sent' };
   }
 }

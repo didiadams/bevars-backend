@@ -8,6 +8,7 @@ export enum OrderDocumentType {
   PRODUCTION_REPORT = 'production_report',
   PACKING_LIST = 'packing_list',
   CERTIFICATE_OF_ORIGIN = 'certificate_of_origin',
+  PHYTOSANITARY_CERTIFICATE = 'phytosanitary_certificate', // Required for agricultural products
   BILL_OF_LADING = 'bill_of_lading',
   DELIVERY_NOTE = 'delivery_note',
   FINAL_INVOICE = 'final_invoice',

@@ -33,15 +33,19 @@ export class SourcingRequestService {
     const limit = filters.limit || 10;
     const skip = (page - 1) * limit;
 
-    // If exporterUserId is provided, get their primaryCrops for filtering
+    // If exporterUserId is provided, get their productCategories, primaryCrops, and exportDestinations for filtering
+    let exporterCategories: string[] = [];
     let exporterCrops: string[] = [];
+    let exporterDestinations: string[] = [];
     if (filters.exporterUserId) {
       try {
         const exporter = await this.exporterService.findByUserId(filters.exporterUserId);
+        exporterCategories = exporter?.productCategories || [];
         exporterCrops = exporter?.primaryCrops || [];
+        exporterDestinations = exporter?.exportDestinations || [];
       } catch (error) {
-        // If exporter not found, continue without crop filtering
-        console.warn('Could not find exporter for crop filtering:', error.message);
+        // If exporter not found, continue without filtering
+        console.warn('Could not find exporter for filtering:', error.message);
       }
     }
 
@@ -77,19 +81,58 @@ export class SourcingRequestService {
       queryBuilder.andWhere('request.urgencyLevel = :urgency', { urgency: filters.urgency });
     }
 
-    // Filter by exporter's primaryCrops - only show requests matching their crops
-    if (exporterCrops.length > 0) {
-      // Match productName against any of the exporter's primaryCrops (case-insensitive)
-      const cropConditions = exporterCrops.map((_, index) => 
-        `LOWER(request.productName) LIKE LOWER(:crop${index})`
+    // Smart filtering by exporter's productCategories and/or primaryCrops
+    // This ensures exporters only see requests relevant to their products
+    const hasCategories = exporterCategories.length > 0;
+    const hasCrops = exporterCrops.length > 0;
+    
+    if (hasCategories || hasCrops) {
+      const conditions: string[] = [];
+      const params: Record<string, string> = {};
+      
+      // Match by productCategory (direct category match)
+      if (hasCategories) {
+        const categoryConditions = exporterCategories.map((_, index) => 
+          `LOWER(request.productCategory) = LOWER(:cat${index})`
+        ).join(' OR ');
+        
+        exporterCategories.forEach((cat, index) => {
+          params[`cat${index}`] = cat.replace(/_/g, ' ');
+        });
+        
+        conditions.push(`(${categoryConditions})`);
+      }
+      
+      // Match by productName against primaryCrops (keyword match)
+      if (hasCrops) {
+        const cropConditions = exporterCrops.map((_, index) => 
+          `LOWER(request.productName) LIKE LOWER(:crop${index})`
+        ).join(' OR ');
+        
+        exporterCrops.forEach((crop, index) => {
+          params[`crop${index}`] = `%${crop.replace(/_/g, ' ')}%`;
+        });
+        
+        conditions.push(`(${cropConditions})`);
+      }
+      
+      // Combine with OR - request matches if it fits any category OR any crop
+      queryBuilder.andWhere(`(${conditions.join(' OR ')})`, params);
+    }
+
+    // Filter by exporter's export destinations (countries they can ship to)
+    // Only show requests where the deliveryCountry is in exporter's exportDestinations
+    if (exporterDestinations.length > 0) {
+      const destinationConditions = exporterDestinations.map((_, index) => 
+        `LOWER(request.deliveryCountry) = LOWER(:dest${index})`
       ).join(' OR ');
       
-      const cropParams = exporterCrops.reduce((acc, crop, index) => {
-        acc[`crop${index}`] = `%${crop.replace(/_/g, ' ')}%`;
-        return acc;
-      }, {} as Record<string, string>);
+      const destParams: Record<string, string> = {};
+      exporterDestinations.forEach((dest, index) => {
+        destParams[`dest${index}`] = dest;
+      });
       
-      queryBuilder.andWhere(`(${cropConditions})`, cropParams);
+      queryBuilder.andWhere(`(${destinationConditions})`, destParams);
     }
 
     if (filters.search) {
