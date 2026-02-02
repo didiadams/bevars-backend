@@ -7,7 +7,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateGlobalBuyerDto } from './dto/create-global-buyer.dto';
 import { UpdateGlobalBuyerDto } from './dto/update-global-buyer.dto';
 import { GlobalBuyerProfileDto } from './dto/global-buyer-profile.dto';
-import { GlobalBuyer } from './entities/global-buyer.entity';
+import { GlobalBuyer, BuyerVerificationTier } from './entities/global-buyer.entity';
 import { VerificationDocument } from 'src/common/entities/verification-document.entity';
 import { VerificationRequirement } from 'src/common/entities/verification-requirement.entity';
 import { User } from '../user/entities/user.entity';
@@ -17,7 +17,6 @@ import { SourcingRequest, RequestStatus } from '../sourcing-request/entities/sou
 import { Offer } from '../offer/entities/offer.entity';
 import { VerificationStatus } from '../exporter/entities/exporter.entity';
 import { OfferService } from '../offer/offer.service';
-
 
 @Injectable()
 export class GlobalBuyerService {
@@ -79,72 +78,92 @@ export class GlobalBuyerService {
 
   async getVerificationOverview(userId: string) {
     const buyer = await this.findByUserId(userId);
-    // Get required document types from DB for buyer. If none are configured yet,
-    // fall back to the default list used by the frontend so totalRequired isn't 0.
-    const requirements = await this.verificationRequirementRepository.find({ where: { ownerType: 'buyer' } });
-    let requiredTypes = requirements.filter(r => r.required).map(r => r.documentType);
-    if (!requiredTypes || requiredTypes.length === 0) {
-      // Fallback default (mirror frontend `globalBuyerDocumentRequirements` required items)
-      requiredTypes = [
-        'company_registration',
-        'business_license',
-        'tax_registration',
-        'bank_statement',
-        'financial_statement',
-      ];
+    
+    // Count all uploaded documents (persisted)
+    const allDocs = await this.sharedVerificationRepo.find({ where: { buyer: { id: buyer.id } } });
+    
+    // Get required documents count from requirements table
+    const requirements = await this.verificationRequirementRepository.find({ where: { ownerType: 'buyer', required: true } });
+    const totalRequired = requirements.length || 5; // Default to 5 if no requirements set
+    
+    const documentsUploaded = allDocs.length;
+    
+    // Determine the correct status based on actual progress
+    let status: string;
+    if (buyer.status === 'approved') {
+      status = 'approved';
+    } else if (buyer.status === 'rejected') {
+      status = 'rejected';
+    } else if (buyer.status === 'under_review' || buyer.status === 'submitted') {
+      status = 'under_review';
+    } else if (documentsUploaded === 0) {
+      // No documents uploaded yet - show as not started
+      status = 'not_started';
+    } else if (documentsUploaded < totalRequired) {
+      // Some documents uploaded but not all - show as in progress
+      status = 'in_progress';
+    } else {
+      // All required documents uploaded but not yet submitted for review
+      status = 'in_progress';
     }
-
-    // Count persisted documents first
-    const persistedCount = await this.sharedVerificationRepo.count({ where: { buyer: { id: buyer.id }, documentType: In(requiredTypes) } });
-    // Only consider persisted documents for verification progress
-    const documentsUploaded = persistedCount;
-    const totalRequired = requiredTypes.length;
-    const status = buyer.status || 'not_started';
-    const reviewNotes = buyer.reviewNotes;
-    const submittedDate = buyer.submittedDate;
-    const approvedDate = buyer.approvedDate;
-    const reviewerName = buyer.reviewerName;
-    const creditRating = buyer.creditRating;
-    const verificationTier = buyer.verificationTier || 'standard';
+    
+    const isVerified = status === 'approved';
+    
     return {
       status,
       documentsUploaded,
       totalRequired,
-      reviewNotes,
-      submittedDate,
-      approvedDate,
-      reviewerName,
-      creditRating,
-      verificationTier,
+      isVerified,
+      reviewNotes: buyer.reviewNotes,
+      submittedDate: buyer.submittedDate,
+      approvedDate: buyer.approvedDate,
+      reviewerName: buyer.reviewerName,
+      creditRating: buyer.creditRating,
     };
   }
+
+
 
   async uploadVerificationDocument(userId: string, documentId: string, fileName: string, file: Express.Multer.File) {
     const buyer = await this.findByUserId(userId);
     const result = await this.cloudinaryService.uploadImage(file);
     const fileUrl = typeof result === 'object' && 'secure_url' in result ? result.secure_url : '';
-    // Persist to shared verification table for richer metadata
-    const doc = this.sharedVerificationRepo.create({
-      buyer: buyer,
-      ownerId: buyer.id,
-      documentType: documentId,
-      fileUrl,
-      fileName,
-      mimeType: file?.mimetype || null,
-      status: VerificationStatus.PENDING,
+    
+    // Check if document already exists - update instead of creating duplicate
+    let doc = await this.sharedVerificationRepo.findOne({ 
+      where: { buyer: { id: buyer.id }, documentType: documentId } 
     });
+    
+    if (doc) {
+      // Update existing document
+      doc.fileUrl = fileUrl;
+      doc.fileName = fileName;
+      doc.mimeType = file?.mimetype || null;
+      doc.status = VerificationStatus.PENDING;
+    } else {
+      // Create new document
+      doc = this.sharedVerificationRepo.create({
+        buyer: buyer,
+        ownerId: buyer.id,
+        documentType: documentId,
+        fileUrl,
+        fileName,
+        mimeType: file?.mimetype || null,
+        status: VerificationStatus.PENDING,
+      });
+    }
     await this.sharedVerificationRepo.save(doc);
-    return { success: true, fileUrl };
-// Ensure GlobalBuyer entity has these columns:
-// companyRegistrationUrl: string
-// businessLicenseUrl: string
-// taxRegistrationUrl: string
-// bankStatementUrl: string
-// financialStatementUrl: string
-// tradeReferencesUrl: string
-// creditReportUrl: string
-// facilityPhotosUrl: string
-// certificationsUrl: string
+    
+    // Update buyer status to in_progress if first document
+    if (buyer.status === 'not_started') {
+      buyer.status = 'in_progress';
+      await this.globalBuyerRepository.save(buyer);
+    }
+    
+    return { 
+      success: true, 
+      fileUrl 
+    };
   }
 
   async submitVerification(userId: string) {
@@ -156,7 +175,6 @@ export class GlobalBuyerService {
     buyer.submittedDate = new Date();
     await this.globalBuyerRepository.save(buyer);
 
-    // No longer using in-memory store
     return { success: true };
   }
 

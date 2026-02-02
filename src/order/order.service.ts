@@ -59,6 +59,24 @@ export class OrderService {
     [OrderStatus.DISPUTED]: [OrderDocumentType.DISPUTE_DOC],
   };
 
+  // Agricultural product categories that require phytosanitary certificate for shipping
+  private readonly agriculturalCategories = [
+    'agricultural_products',
+    'agricultural products',
+    'processed_foods',
+    'processed foods',
+    'spices_herbs',
+    'spices herbs',
+    'fruits_vegetables',
+    'fruits vegetables',
+    'grains_cereals',
+    'grains cereals',
+    'livestock_products',
+    'livestock products',
+    'seafood',
+    'beverages',
+  ];
+
   // Central list of statuses that require explicit buyer approval (server authoritative).
   private approvalRequiredStatuses: OrderStatus[] = [
     OrderStatus.READY_FOR_SHIPMENT,
@@ -170,6 +188,49 @@ export class OrderService {
       if (v) out[k] = [...v];
     });
     return out;
+  }
+
+  /**
+   * Determine if an order involves agricultural products based on the sourcing request's product category.
+   * Agricultural products require phytosanitary certificate for international shipment.
+   */
+  async isAgriculturalOrder(orderId: string): Promise<boolean> {
+    try {
+      const order = await this.orderRepository.findOne({
+        where: { id: orderId },
+        relations: ['offer', 'offer.sourcingRequest'],
+      });
+      
+      if (!order?.offer?.sourcingRequest?.productCategory) {
+        return false;
+      }
+      
+      const category = order.offer.sourcingRequest.productCategory.toLowerCase().replace(/[-\s]/g, '_');
+      return this.agriculturalCategories.some(ac => 
+        category.includes(ac.replace(/[-\s]/g, '_')) || ac.replace(/[-\s]/g, '_').includes(category)
+      );
+    } catch (error) {
+      this.logger.warn(`Could not determine if order ${orderId} is agricultural: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Get required documents for a specific order and status.
+   * For agricultural orders, phytosanitary certificate is required at SHIPPED status.
+   */
+  async getRequiredDocsForOrder(orderId: string, status: OrderStatus): Promise<OrderDocumentType[]> {
+    const baseDocs = this.requiredDocsForStatus[status] ?? [];
+    
+    // Add phytosanitary certificate for agricultural orders at SHIPPED status
+    if (status === OrderStatus.SHIPPED) {
+      const isAgricultural = await this.isAgriculturalOrder(orderId);
+      if (isAgricultural) {
+        return [...baseDocs, OrderDocumentType.PHYTOSANITARY_CERTIFICATE];
+      }
+    }
+    
+    return [...baseDocs];
   }
 
   /**
@@ -302,7 +363,7 @@ export class OrderService {
         try {
           const prev = order.previousStatus as OrderStatus | undefined;
           if (prev) {
-            const requiredForPrev = this.requiredDocsForStatus[prev] ?? [];
+            const requiredForPrev = await this.getRequiredDocsForOrder(order.id, prev);
             if (requiredForPrev && requiredForPrev.length > 0) {
               const docs = await this.orderDocumentRepository.findByOrderId(order.id);
               const uploadedTypes = new Set((docs || []).map((d) => d.type));
@@ -370,8 +431,8 @@ export class OrderService {
       });
     }
 
-    // Ensure required documents are present for that status
-    const required = this.requiredDocsForStatus[targetStatus] ?? [];
+    // Ensure required documents are present for that status (including phytosanitary for agricultural orders)
+    const required = await this.getRequiredDocsForOrder(order.id, targetStatus);
     const orderWithDocs = await this.orderRepository.findOne({ where: { id: order.id }, relations: ['documents'] });
     let uploadedTypes = new Set((orderWithDocs?.documents || []).map((d) => d.type));
     let missing = required.filter((r) => !uploadedTypes.has(r));
@@ -465,7 +526,8 @@ export class OrderService {
     }
 
     // Ensure required documents are present for the target status (with retry)
-    const required = this.requiredDocsForStatus[target] ?? [];
+    // Use dynamic method to include phytosanitary for agricultural orders
+    const required = await this.getRequiredDocsForOrder(order.id, target);
     if (required.length > 0) {
       const orderWithDocs = await this.orderRepository.findOne({ where: { id: order.id }, relations: ['documents'] });
       let uploadedTypes = new Set((orderWithDocs?.documents || []).map((d) => d.type));
@@ -700,7 +762,8 @@ export class OrderService {
     // reupload UI even if dispute isn't active)
     const prevStatus = order.status === OrderStatus.DISPUTED ? order.previousStatus : order.status;
 
-    const requiredForPrev = prevStatus ? (this.requiredDocsForStatus[prevStatus] ?? []) : [];
+    // Use dynamic method to include phytosanitary for agricultural orders
+    const requiredForPrev = prevStatus ? await this.getRequiredDocsForOrder(orderId, prevStatus) : [];
 
     const existingDocs = await this.orderDocumentRepository.findByOrderId(orderId);
 
@@ -965,8 +1028,8 @@ export class OrderService {
       }
     }
 
-    // Validate required documents for the target status
-    const required = this.requiredDocsForStatus[status] ?? [];
+    // Validate required documents for the target status (including phytosanitary for agricultural orders)
+    const required = await this.getRequiredDocsForOrder(order.id, status);
     if (required.length > 0) {
       // reload order with documents relation
       const orderWithDocs = await this.orderRepository.findOne({

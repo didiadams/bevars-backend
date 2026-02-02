@@ -167,6 +167,23 @@ export class OrderController {
     return this.orderService.listDocuments(orderId, req.user.id);
   }
 
+  // Get required docs for a specific order and status (includes dynamic requirements like phytosanitary for agricultural orders)
+  @Get(':orderId/required-docs/:status')
+  async getOrderRequiredDocs(
+    @Param('orderId') orderId: string,
+    @Param('status') status: string,
+    @Request() req,
+  ) {
+    // Validate the order belongs to this user
+    await this.orderService.findOne(orderId, req.user.id);
+    const requiredDocs = await this.orderService.getRequiredDocsForOrder(orderId, status as any);
+    return {
+      orderId,
+      status,
+      requiredDocs,
+    };
+  }
+
   // Canonical required-docs map (avoid frontend drift)
   @Get('meta/required-docs')
   async getRequiredDocsMap() {

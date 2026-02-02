@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindManyOptions, Between, MoreThanOrEqual, LessThanOrEqual, In } from 'typeorm';
-import { Exporter, VerificationStatus, ExporterCategory } from './entities/exporter.entity';
+import { Exporter, VerificationStatus, ExporterCategory, ExporterVerificationTier } from './entities/exporter.entity';
 import { VerificationDocument } from 'src/common/entities/verification-document.entity';
 import { VerificationRequirement } from 'src/common/entities/verification-requirement.entity';
 import { CreateExporterDto } from './dto/create-exporter.dto';
@@ -162,7 +162,7 @@ export class ExporterService {
     exporterId: string,
     documentType: string,
     file: any, // Changed from Express.Multer.File
-  ): Promise<{ url: string; documentType: string }> {
+  ): Promise<{ url: string; documentType: string; verificationTier?: string; message?: string }> {
     const exporter = await this.findOne(exporterId);
 
     if (exporter.verificationStatus === VerificationStatus.APPROVED) {
@@ -170,27 +170,41 @@ export class ExporterService {
     }
 
     try {
-      const uploadResult = await this.cloudinaryService.uploadImage(file); // Changed method name
-
-      // Update verification documents
+      const uploadResult = await this.cloudinaryService.uploadImage(file);
       const fileUrl = uploadResult.secure_url;
 
-      // Persist to verification_document table for richer metadata
-      const doc = this.verificationDocumentRepository.create({
-        exporter: exporter,
-        ownerId: exporter.id,
-        documentType,
-        fileUrl,
-        fileName: file?.originalname || null,
-        mimeType: file?.mimetype || null,
-        status: VerificationStatus.PENDING,
+      // Check if document already exists - update instead of creating duplicate
+      let doc = await this.verificationDocumentRepository.findOne({ 
+        where: { exporter: { id: exporter.id }, documentType } 
       });
+      
+      if (doc) {
+        // Update existing document
+        doc.fileUrl = fileUrl;
+        doc.fileName = file?.originalname || null;
+        doc.mimeType = file?.mimetype || null;
+        doc.status = VerificationStatus.PENDING;
+      } else {
+        // Create new document
+        doc = this.verificationDocumentRepository.create({
+          exporter: exporter,
+          ownerId: exporter.id,
+          documentType,
+          fileUrl,
+          fileName: file?.originalname || null,
+          mimeType: file?.mimetype || null,
+          status: VerificationStatus.PENDING,
+        });
+      }
       await this.verificationDocumentRepository.save(doc);
 
-      // Keep backward-compatible JSON blob on exporter as well
-      // No legacy JSON blob update — documents persisted in VerificationDocument table only
+      // Don't change verification status during upload - user must explicitly submit for review
+      // The getVerificationOverview method will calculate the correct display status based on document count
 
-      return { url: fileUrl, documentType };
+      return { 
+        url: fileUrl, 
+        documentType
+      };
     } catch (error) {
       throw new BadRequestException(`Failed to upload document: ${error.message}`);
     }
@@ -223,41 +237,51 @@ export class ExporterService {
     return await this.exporterRepository.save(exporter);
   }
 
-  // Verification overview mirroring GlobalBuyerService
+
+  // Verification overview
   async getVerificationOverview(userId: string) {
     const exporter = await this.findByUserId(userId);
-    // Get required document types from DB
+    
+    // Count all uploaded documents (persisted)
+    const allDocs = await this.verificationDocumentRepository.find({ where: { exporter: { id: exporter.id } } });
+    
+    // Get required documents count from requirements table
     const requirements = await this.verificationRequirementRepository.find({ where: { ownerType: 'exporter', required: true } });
-    let requiredIds = requirements.map(r => r.documentType);
-    // If no requirements have been seeded yet, fall back to a sensible default
-    // so the frontend doesn't see totalRequired === 0 and compute NaN/0/0 progress.
-    if (!requiredIds || requiredIds.length === 0) {
-      requiredIds = [
-        'cac_certificate',
-        'export_license',
-        'nafdac_certificate',
-        'phytosanitary_certificate',
-        'tax_clearance',
-      ];
+    // Default to 3 if no requirements set (matches frontend: business_registration, export_license, tax_certificate)
+    const totalRequired = requirements.length || 3;
+    
+    const documentsUploaded = allDocs.length;
+    
+    // Determine the correct status based on actual progress
+    let status: string;
+    if (exporter.verificationStatus === VerificationStatus.APPROVED) {
+      status = 'approved';
+    } else if (exporter.verificationStatus === VerificationStatus.REJECTED) {
+      status = 'rejected';
+    } else if (exporter.verificationStatus === VerificationStatus.UNDER_REVIEW) {
+      status = 'under_review';
+    } else if (documentsUploaded === 0) {
+      // No documents uploaded yet - show as not started
+      status = 'not_started';
+    } else if (documentsUploaded < totalRequired) {
+      // Some documents uploaded but not all - show as in progress
+      status = 'in_progress';
+    } else {
+      // All required documents uploaded but not yet submitted for review
+      status = 'in_progress';
     }
-
-    // Count from persisted verification documents table (preferred)
-    const persistedCount = await this.verificationDocumentRepository.count({ where: { exporter: { id: exporter.id }, documentType: In(requiredIds) } });
-  const documentsUploaded = persistedCount;
-    const totalRequired = requiredIds.length;
-    const status = exporter.verificationStatus
-      ? exporter.verificationStatus.toLowerCase()
-      : 'not_started';
+    
+    const isVerified = exporter.verificationStatus === VerificationStatus.APPROVED;
+      
     return {
       status,
       documentsUploaded,
       totalRequired,
+      isVerified,
       reviewNotes: exporter.verificationNotes,
-      submittedDate: exporter.verificationReviewedAt, // best available timestamp
+      submittedDate: exporter.verificationReviewedAt,
       approvedDate: exporter.isVerified ? exporter.verificationReviewedAt : null,
       reviewerName: exporter.verificationReviewedBy,
-      creditRating: undefined,
-      verificationTier: undefined,
     };
   }
 
@@ -306,6 +330,11 @@ export class ExporterService {
     exporter.isVerified = status === VerificationStatus.APPROVED;
     exporter.verificationReviewedAt = new Date();
     exporter.verificationReviewedBy = adminUserId;
+    
+    // Set FULL tier when admin approves
+    if (status === VerificationStatus.APPROVED) {
+      exporter.verificationTier = ExporterVerificationTier.FULL;
+    }
 
     return await this.exporterRepository.save(exporter);
   }
@@ -816,8 +845,10 @@ export class ExporterService {
   async getDashboardRequests(userId: string) {
     const exporter = await this.findByUserId(userId);
     
-    // Get exporter's primary crops for filtering
+    // Get exporter's productCategories, primaryCrops, and exportDestinations for filtering
+    const exporterCategories = exporter?.productCategories || [];
     const exporterCrops = exporter?.primaryCrops || [];
+    const exporterDestinations = exporter?.exportDestinations || [];
     
     // Build query for active requests
     let queryBuilder = this.sourcingRequestRepository
@@ -829,18 +860,57 @@ export class ExporterService {
       .andWhere('request.quotationDeadline >= :now', { now: new Date() })
       .andWhere('request.isPublic = :isPublic', { isPublic: true });
 
-    // Filter by exporter's primaryCrops - only show requests matching their crops
-    if (exporterCrops.length > 0) {
-      const cropConditions = exporterCrops.map((_, index) => 
-        `LOWER(request.productName) LIKE LOWER(:crop${index})`
+    // Smart filtering by productCategories and/or primaryCrops
+    const hasCategories = exporterCategories.length > 0;
+    const hasCrops = exporterCrops.length > 0;
+    
+    if (hasCategories || hasCrops) {
+      const conditions: string[] = [];
+      const params: Record<string, string> = {};
+      
+      // Match by productCategory (direct category match)
+      if (hasCategories) {
+        const categoryConditions = exporterCategories.map((_, index) => 
+          `LOWER(request.productCategory) = LOWER(:cat${index})`
+        ).join(' OR ');
+        
+        exporterCategories.forEach((cat, index) => {
+          params[`cat${index}`] = cat.replace(/_/g, ' ');
+        });
+        
+        conditions.push(`(${categoryConditions})`);
+      }
+      
+      // Match by productName against primaryCrops (keyword match)
+      if (hasCrops) {
+        const cropConditions = exporterCrops.map((_, index) => 
+          `LOWER(request.productName) LIKE LOWER(:crop${index})`
+        ).join(' OR ');
+        
+        exporterCrops.forEach((crop, index) => {
+          params[`crop${index}`] = `%${crop.replace(/_/g, ' ')}%`;
+        });
+        
+        conditions.push(`(${cropConditions})`);
+      }
+      
+      // Combine with OR - request matches if it fits any category OR any crop
+      queryBuilder.andWhere(`(${conditions.join(' OR ')})`, params);
+    }
+
+    // Filter by exporter's export destinations (countries they can ship to)
+    // Only show requests where the deliveryCountry is in exporter's exportDestinations
+    if (exporterDestinations.length > 0) {
+      const destinationConditions = exporterDestinations.map((_, index) => 
+        `LOWER(request.deliveryCountry) = LOWER(:dest${index})`
       ).join(' OR ');
       
-      const cropParams = exporterCrops.reduce((acc, crop, index) => {
-        acc[`crop${index}`] = `%${crop.replace(/_/g, ' ')}%`;
-        return acc;
-      }, {} as Record<string, string>);
+      const destParams: Record<string, string> = {};
+      exporterDestinations.forEach((dest, index) => {
+        destParams[`dest${index}`] = dest;
+      });
       
-      queryBuilder.andWhere(`(${cropConditions})`, cropParams);
+      queryBuilder.andWhere(`(${destinationConditions})`, destParams);
     }
 
     const requests = await queryBuilder

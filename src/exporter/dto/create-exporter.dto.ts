@@ -80,4 +80,8 @@ export class CreateExporterDto {
   @IsOptional()
   @IsBoolean()
   bankVerified?: boolean;
+
+  @IsOptional()
+  @IsString()
+  exporterType?: string;
 }
