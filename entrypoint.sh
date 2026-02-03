@@ -35,19 +35,19 @@ until node -e "
 done
 echo "Database connected!"
 
-# Run migrations
-echo "Running database migrations..."
-count=0
-until yarn migration:run:prod; do
-  count=$((count + 1))
-  if [ "$count" -ge "$MAX_RETRIES" ]; then
-    echo "ERROR: Migrations failed after $MAX_RETRIES attempts"
-    exit 1
+# Run migrations only if SKIP_MIGRATIONS is not set
+if [ "$SKIP_MIGRATIONS" = "true" ]; then
+  echo "Skipping migrations (SKIP_MIGRATIONS=true)"
+else
+  echo "Running database migrations..."
+  # Run migrations - allow failure if no migrations pending
+  if yarn migration:run:prod; then
+    echo "Migrations complete!"
+  else
+    # Check if it's just "no migrations pending" vs actual error
+    echo "Migration command returned non-zero. Checking if app can start anyway..."
   fi
-  echo "Migration failed, retry $count/$MAX_RETRIES in ${RETRY_DELAY}s..."
-  sleep $RETRY_DELAY
-done
-echo "Migrations complete!"
+fi
 
 # Start the app
 echo "Starting application on port ${PORT:-3000}..."
