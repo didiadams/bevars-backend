@@ -1,5 +1,6 @@
 [build]
-builder = "nixpacks"
+# Using a Dockerfile instead of the deprecated nixpacks builder.
+# Railway will detect and build the Dockerfile in the `backend/` context.
 buildCommand = "yarn install && yarn build"
 
 [deploy]
@@ -10,4 +11,4 @@ restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
 [service]
-internalPort = 3001
+internalPort = 3000
