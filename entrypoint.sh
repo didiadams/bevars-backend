@@ -35,19 +35,9 @@ until node -e "
 done
 echo "Database connected!"
 
-# Run migrations
-echo "Running database migrations..."
-count=0
-until yarn migration:run:prod; do
-  count=$((count + 1))
-  if [ "$count" -ge "$MAX_RETRIES" ]; then
-    echo "ERROR: Migrations failed after $MAX_RETRIES attempts"
-    exit 1
-  fi
-  echo "Migration failed, retry $count/$MAX_RETRIES in ${RETRY_DELAY}s..."
-  sleep $RETRY_DELAY
-done
-echo "Migrations complete!"
+# Migrations are run manually via: railway run yarn migration:run:prod
+# This prevents crashes on restart and gives you control over when migrations run
+echo "Skipping auto-migrations (run manually: railway run yarn migration:run:prod)"
 
 # Start the app
 echo "Starting application on port ${PORT:-3000}..."
