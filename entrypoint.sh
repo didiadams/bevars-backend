@@ -35,19 +35,9 @@ until node -e "
 done
 echo "Database connected!"
 
-# Run migrations only if SKIP_MIGRATIONS is not set
-if [ "$SKIP_MIGRATIONS" = "true" ]; then
-  echo "Skipping migrations (SKIP_MIGRATIONS=true)"
-else
-  echo "Running database migrations..."
-  # Run migrations - allow failure if no migrations pending
-  if yarn migration:run:prod; then
-    echo "Migrations complete!"
-  else
-    # Check if it's just "no migrations pending" vs actual error
-    echo "Migration command returned non-zero. Checking if app can start anyway..."
-  fi
-fi
+# Migrations are run manually via: railway run yarn migration:run:prod
+# This prevents crashes on restart and gives you control over when migrations run
+echo "Skipping auto-migrations (run manually: railway run yarn migration:run:prod)"
 
 # Start the app
 echo "Starting application on port ${PORT:-3000}..."
