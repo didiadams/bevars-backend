@@ -1,14 +1,18 @@
+# Railway configuration for backend service
+# Using Dockerfile (Node 20) for builds
+
 [build]
-# Using a Dockerfile instead of the deprecated nixpacks builder.
-# Railway will detect and build the Dockerfile in the `backend/` context.
+# Dockerfile will be used if present; keep a buildCommand fallback for non-docker builds
 buildCommand = "yarn install && yarn build"
 
 [deploy]
-startCommand = "yarn migration:run:prod && yarn start:prod"
+# Start command: the Docker image handles migrations via entrypoint; runtime start only
+startCommand = "yarn start:prod"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
 [service]
+# App listens on process.env.PORT (default 3000)
 internalPort = 3000
