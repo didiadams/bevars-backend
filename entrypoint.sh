@@ -51,4 +51,4 @@ echo "Migrations complete!"
 
 # Start the app
 echo "Starting application on port ${PORT:-3000}..."
-exec node dist/main.js
+exec node dist/src/main.js
