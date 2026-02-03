@@ -25,4 +25,9 @@ COPY --from=builder /app/package.json ./package.json
 EXPOSE 3000
 
 # Run migrations then start
-CMD ["sh", "-lc", "yarn migration:run:prod && yarn start:prod"]
+# Copy entrypoint and make executable
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
+# Entrypoint will wait for DB, run migrations with retries, then start the app
+ENTRYPOINT ["/bin/sh", "./entrypoint.sh"]
