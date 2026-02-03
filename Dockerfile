@@ -1,33 +1,35 @@
-# Multi-stage Dockerfile — builds with Node 20 and runs migrations before start
+# Production Dockerfile for NestJS backend
+# Multi-stage build with Node 20
 
-# Builder stage
+# ============ Builder Stage ============
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Install build deps
+# Install dependencies first (better cache)
 COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile --production=false
+RUN yarn install --frozen-lockfile
 
-# Copy source and build
+# Copy source code and build
 COPY . .
 RUN yarn build
 
-# Runner stage
-FROM node:20-alpine AS runner
+# ============ Production Stage ============
+FROM node:20-alpine AS production
 WORKDIR /app
+
 ENV NODE_ENV=production
 
-# Copy built artifacts and production deps
+# Install only production dependencies
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile --production=true && yarn cache clean
+
+# Copy built artifacts from builder
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+
+# Copy entrypoint script
+COPY --from=builder /app/entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
 
 EXPOSE 3000
 
-# Run migrations then start
-# Copy entrypoint and make executable
-COPY entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh
-
-# Entrypoint will wait for DB, run migrations with retries, then start the app
-ENTRYPOINT ["/bin/sh", "./entrypoint.sh"]
+ENTRYPOINT ["./entrypoint.sh"]

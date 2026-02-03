@@ -1,18 +1,15 @@
-# Railway configuration for backend service
-# Using Dockerfile (Node 20) for builds
+# Railway configuration for NestJS backend
+# Uses Dockerfile for builds — entrypoint handles migrations + start
 
 [build]
-# Dockerfile will be used if present; keep a buildCommand fallback for non-docker builds
-buildCommand = "yarn install && yarn build"
+# Railway auto-detects Dockerfile; no buildCommand needed
 
 [deploy]
-# Start command: the Docker image handles migrations via entrypoint; runtime start only
-startCommand = "yarn start:prod"
+# Dockerfile ENTRYPOINT handles everything; no startCommand needed
 healthcheckPath = "/api/health"
-healthcheckTimeout = 300
+healthcheckTimeout = 120
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
 [service]
-# App listens on process.env.PORT (default 3000)
 internalPort = 3000
