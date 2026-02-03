@@ -83,3 +83,40 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+## Deployment (Railway + Neon)
+
+This project supports two deployment workflows: a Docker-based production image (recommended) or Railway build. Key points:
+
+- Node version: `>=20` (see `package.json` `engines` and `.nvmrc`).
+- Production image: `backend/Dockerfile` (multi-stage, Node 20).
+- Health endpoint: `GET /api/health` (used by Railway health checks).
+
+Quick deploy steps (Railway + Neon):
+
+1. Create a Neon PostgreSQL project and copy the connection string (use pooled URL if available).
+2. In Railway service → Settings → Variables, set `DATABASE_URL` to the Neon connection string.
+3. Add env variables from `backend/.env.example` into Railway Variables.
+4. Railway will build using the provided `Dockerfile` and run the start command which executes migrations then starts the server (`yarn migration:run:prod && yarn start:prod`).
+
+Useful commands (Railway CLI):
+
+```bash
+# view logs
+railway login
+railway logs --limit 200
+
+# run migrations manually
+railway run yarn migration:run:prod
+```
+
+Troubleshooting
+
+- If builds fail due to Node version, ensure Railway uses Node 20 (we include `.nvmrc` and `engines.node`).
+- If the database is empty, run migrations manually (see command above) and verify `DATABASE_URL` points to Neon.
+- If you see CORS errors, add your frontend origin to `ALLOWED_ORIGINS` in Railway and/or update `src/main.ts` CORS settings.
+
+Security & notes
+
+- Do not store secrets in the repo — use Railway Variables.
+- Neon free tier may sleep after inactivity; consider pooled connections for production.
