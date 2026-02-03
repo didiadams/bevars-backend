@@ -1,0 +1,18 @@
+# Docker ignore file - exclude from build context
+node_modules
+dist
+.git
+.github
+coverage
+test
+*.test.ts
+*.spec.ts
+.env*
+!.env.example
+README.md
+.eslintrc.js
+prettier.config.js
+jest.config.js
+yarn-error.log
+hp.ts
+.deployignore

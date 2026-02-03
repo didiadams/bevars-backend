@@ -1,35 +1,54 @@
 #!/bin/sh
 set -e
 
-# Simple wait-for-db and migration runner with retries
-: ${DATABASE_URL:?Need to set DATABASE_URL}
+echo "=== Starting Bevars Backend ==="
 
-max_retries=5
-retry_delay=3
+# Validate required env
+if [ -z "$DATABASE_URL" ]; then
+  echo "ERROR: DATABASE_URL is required"
+  exit 1
+fi
+
+MAX_RETRIES=5
+RETRY_DELAY=5
+
+# Wait for database to be ready
+echo "Checking database connection..."
 count=0
-
-echo "Waiting for database..."
-until node -e "require('pg').Client({connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }}).connect().then(c=>c.end()).catch(()=>{process.exit(1)})"; do
-  count=$((count+1))
-  if [ "$count" -ge "$max_retries" ]; then
-    echo "Database not ready after $count attempts"
+until node -e "
+  const { Client } = require('pg');
+  const client = new Client({ 
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+  client.connect()
+    .then(() => { client.end(); process.exit(0); })
+    .catch(() => process.exit(1));
+" 2>/dev/null; do
+  count=$((count + 1))
+  if [ "$count" -ge "$MAX_RETRIES" ]; then
+    echo "ERROR: Database not ready after $MAX_RETRIES attempts"
     exit 1
   fi
-  echo "Database not ready, retrying in $retry_delay seconds... ($count/$max_retries)"
-  sleep $retry_delay
+  echo "Database not ready, retry $count/$MAX_RETRIES in ${RETRY_DELAY}s..."
+  sleep $RETRY_DELAY
 done
+echo "Database connected!"
 
-# Run migrations with retries
+# Run migrations
+echo "Running database migrations..."
 count=0
 until yarn migration:run:prod; do
-  count=$((count+1))
-  if [ "$count" -ge "$max_retries" ]; then
-    echo "Migrations failed after $count attempts"
+  count=$((count + 1))
+  if [ "$count" -ge "$MAX_RETRIES" ]; then
+    echo "ERROR: Migrations failed after $MAX_RETRIES attempts"
     exit 1
   fi
-  echo "Migration failed, retrying in $retry_delay seconds... ($count/$max_retries)"
-  sleep $retry_delay
+  echo "Migration failed, retry $count/$MAX_RETRIES in ${RETRY_DELAY}s..."
+  sleep $RETRY_DELAY
 done
+echo "Migrations complete!"
 
-# Start the application
-exec yarn start:prod
+# Start the app
+echo "Starting application on port ${PORT:-3000}..."
+exec node dist/main.js
