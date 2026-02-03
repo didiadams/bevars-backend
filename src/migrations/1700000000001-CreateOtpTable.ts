@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class CreateOtpTable1759616146652 implements MigrationInterface {
-    name = 'CreateOtpTable1759616146652'
+export class CreateOtpTable1700000000001 implements MigrationInterface {
+    name = 'CreateOtpTable1700000000001'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`CREATE TYPE "public"."otp_type_enum" AS ENUM('email_verification', 'password_reset', 'account_activation')`);

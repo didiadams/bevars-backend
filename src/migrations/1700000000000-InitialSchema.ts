@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class InitialSchema1759382018900 implements MigrationInterface {
-    name = 'InitialSchema1759382018900'
+export class InitialSchema1700000000000 implements MigrationInterface {
+    name = 'InitialSchema1700000000000'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`CREATE TYPE "public"."verification_document_status_enum" AS ENUM('pending', 'under_review', 'approved', 'rejected')`);

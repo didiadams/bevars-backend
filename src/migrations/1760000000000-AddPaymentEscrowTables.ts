@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner, Table, TableForeignKey, TableIndex } from 'typeorm';
 
-export class AddPaymentEscrowTables1737000000000 implements MigrationInterface {
-  name = 'AddPaymentEscrowTables1737000000000';
+export class AddPaymentEscrowTables1760000000000 implements MigrationInterface {
+  name = 'AddPaymentEscrowTables1760000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Create escrow_account table

@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class AddVerificationTier1759800000000 implements MigrationInterface {
-    name = 'AddVerificationTier1759800000000'
+export class AddVerificationTier1780000000000 implements MigrationInterface {
+    name = 'AddVerificationTier1780000000000'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         // Create enum type for exporter verification tier if it doesn't exist

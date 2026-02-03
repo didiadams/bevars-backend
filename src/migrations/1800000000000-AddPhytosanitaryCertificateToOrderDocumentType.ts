@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddPhytosanitaryCertificateToOrderDocumentType1759900000000 implements MigrationInterface {
-  name = 'AddPhytosanitaryCertificateToOrderDocumentType1759900000000';
+export class AddPhytosanitaryCertificateToOrderDocumentType1800000000000 implements MigrationInterface {
+  name = 'AddPhytosanitaryCertificateToOrderDocumentType1800000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Add phytosanitary_certificate to the order_document_type_enum
