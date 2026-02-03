@@ -33,18 +33,25 @@ app.enableCors({
       'https://farm-frontend-rosy.vercel.app',
       'http://localhost:8080',
       'http://localhost:3000',
+      'http://localhost:3001',
       'https://www.bevars.com',
       'https://bevars.com',
+      // Railway internal
+      'https://api.bevars.com',
     ];
+    // Allow requests with no origin (mobile apps, Postman, server-to-server)
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      console.log(`CORS blocked origin: ${origin}`);
+      callback(null, false);
     }
   },
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true, // ✅ MUST be present if using Authorization headers or cookies
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
 });
 
 
