@@ -6,7 +6,7 @@
 
 [deploy]
 # Dockerfile ENTRYPOINT handles everything; no startCommand needed
-healthcheckPath = "/api/health"
+healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 120
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
