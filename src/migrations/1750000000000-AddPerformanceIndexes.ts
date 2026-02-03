@@ -1,6 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddPerformanceIndexes1731456789012 implements MigrationInterface {
+export class AddPerformanceIndexes1750000000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Order table indexes for faster queries — only create if table exists
     if (await queryRunner.hasTable('order')) {

@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class SeedVerificationRequirements1759850000000 implements MigrationInterface {
-    name = 'SeedVerificationRequirements1759850000000'
+export class SeedVerificationRequirements1790000000000 implements MigrationInterface {
+    name = 'SeedVerificationRequirements1790000000000'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         // Clear existing requirements
