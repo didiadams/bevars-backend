@@ -1,11 +1,3 @@
-
-// Tiered verification system - allows graduated access based on documents submitted
-export enum BuyerVerificationTier {
-  NONE = 'none',           // No documents uploaded
-  BASIC = 'basic',         // 2 core docs (Company Reg + Tax Reg) - can create requests, send messages
-  FULL = 'full',           // All docs + Admin approved - can place orders with escrow
-}
-
 import { User } from 'src/user/entities/user.entity';
 import {
   Column,
@@ -19,6 +11,13 @@ import {
 } from 'typeorm';
 import { SourcingRequest } from 'src/sourcing-request/entities/sourcing-request.entity';
 import { VerificationDocument } from 'src/common/entities/verification-document.entity';
+
+// Tiered verification system - allows graduated access based on documents submitted
+export enum BuyerVerificationTier {
+  NONE = 'none',           // No documents uploaded
+  BASIC = 'basic',         // 2 core docs (Company Reg + Tax Reg) - can create requests, send messages
+  FULL = 'full',           // All docs + Admin approved - can place orders with escrow
+}
 
 export enum BuyerType {
   RETAILER = 'retailer',
