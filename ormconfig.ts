@@ -44,13 +44,36 @@ const getMigrations = () =>
     ? [path.join(__dirname, 'src/migrations/*.ts')]
     : [path.join(__dirname, 'src/migrations/*.js')];
 
-// --- Data Source ---
+// --- Data Source for CLI (migration:run, migration:generate, etc.) ---
+// Uses entities for schema diffing (migration:generate) 
 export const AppDataSource = new DataSource({
   type: 'postgres',
   ...dbConfig,
   entities: getEntityPath(),
   migrations: getMigrations(),
   synchronize: false, // never true in prod
+  logging: isDevelopment,
+  migrationsTransactionMode: 'each',
+
+  extra: {
+    max: process.env.NODE_ENV === 'production' ? 20 : 10,
+    min: 2,
+    statement_timeout: 30000,
+    query_timeout: 30000,
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000,
+    application_name: 'bevars-exporters',
+  },
+});
+
+// --- Migration-only Data Source (no entity metadata needed) ---
+// Use this for migration:run and migration:revert to avoid circular dependency issues
+export const MigrationDataSource = new DataSource({
+  type: 'postgres',
+  ...dbConfig,
+  entities: [],
+  migrations: getMigrations(),
+  synchronize: false,
   logging: isDevelopment,
   migrationsTransactionMode: 'each',
 
